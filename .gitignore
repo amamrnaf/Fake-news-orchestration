@@ -1,0 +1,10 @@
+.venv/
+__pycache__/
+*.pyc
+results/*
+!results/.gitkeep
+data_raw/*
+!data_raw/*.example.jsonl
+!data_raw/.gitkeep
+!data_raw/coco/.gitkeep
+!data_raw/pheme-rnr-dataset/.gitkeep

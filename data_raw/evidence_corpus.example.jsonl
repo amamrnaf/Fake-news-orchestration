@@ -1,0 +1,2 @@
+{"doc_id": "example-0001", "text": "Replace this file with real evidence passages. Each line is one JSON object: {\"doc_id\": <unique string>, \"text\": <passage text T3's BM25 index will search over>}."}
+{"doc_id": "example-0002", "text": "One passage per line (JSONL, not a JSON array). Rename this file to evidence_corpus.jsonl (matching paths.evidence_corpus in configs/default.yaml) once populated with real content."}
