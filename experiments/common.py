@@ -100,6 +100,7 @@ def build_registry(
         corpus=corpus,
         k=cfg["t3_evidence_verifier"]["bm25_k"],
         min_score=cfg["t3_evidence_verifier"]["min_score"],
+        max_new_tokens=cfg["llm"]["max_new_tokens"],
     )
 
     return DetectorRegistry(t1, t2, t3)

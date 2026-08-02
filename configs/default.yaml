@@ -46,13 +46,18 @@ t1_supervised:
   patience: 3
 
 llm:
-  # Switch backend to "api" for pilot testing against a hosted/OpenAI-compatible
-  # endpoint before committing to the local 4-bit checkpoint (Sec 4.4).
-  backend: "local"
-  model_name: "REPLACE_WITH_EXACT_CHECKPOINT_AFTER_PILOT"  # e.g. a 7-8B instruct model
-  load_in_4bit: true
+  # LM Studio local server (OpenAI-compatible), model already loaded there.
+  backend: "api"
+  model_name: "qwen3.5-9b"
+  base_url: "http://127.0.0.1:1234/v1"
+  api_key: "lm-studio"  # LM Studio ignores the key's value but the client requires one
   max_input_tokens: 4096
-  max_new_tokens: 200
+  # qwen3.5-9b is a reasoning model: it spends a large, variable chunk of this
+  # budget on hidden <reasoning_content> before emitting the actual answer
+  # (observed ~190 tokens of reasoning for a trivial one-word prompt). Kept
+  # generous so T2/T3/router prompts don't get truncated before the real
+  # content appears; the old 200/150 defaults produced empty responses.
+  max_new_tokens: 800
 
 t3_evidence_verifier:
   bm25_k: 5
@@ -61,7 +66,7 @@ t3_evidence_verifier:
 router:
   mode: "instance_aware"   # "domain_catalogue" | "instance_aware"
   max_retries: 2
-  max_new_tokens: 150
+  max_new_tokens: 600
   lambda_grid: [0.0, 0.25, 0.5, 0.75, 1.0]  # secondary efficiency experiment (Sec 3.1)
 
 evaluation:
