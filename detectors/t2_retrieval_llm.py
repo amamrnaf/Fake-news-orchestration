@@ -15,6 +15,7 @@ from typing import List, Literal, Optional, Sequence
 from detectors.llm_backend import LLMBackend
 from retrieval.index import AffectiveSemanticIndex, RetrievedExample
 from utils.json_schema import extract_json_block
+from utils.text import truncate_chars
 from utils.types import DetectorOutput, NewsItem
 
 import json
@@ -42,7 +43,7 @@ def _format_examples(examples: Sequence[RetrievedExample]) -> str:
 def _build_prompt(item: NewsItem, examples: Sequence[RetrievedExample]) -> str:
     return (
         f"Labelled examples:\n{_format_examples(examples)}\n\n"
-        f"Target item:\n{item.text}\n\n"
+        f"Target item:\n{truncate_chars(item.text)}\n\n"
         "Respond with the JSON object only."
     )
 
@@ -104,7 +105,21 @@ class RetrievedExampleLLMDetector:
     def predict(self, item: NewsItem) -> DetectorOutput:
         examples = self._retrieve(item)
         prompt = _build_prompt(item, examples)
-        response = self.llm.generate(prompt, system=_SYSTEM_PROMPT, max_new_tokens=self.max_new_tokens)
+        meta = {"mode": self.mode, "k": self.k, "alpha": self.alpha, "n_examples": len(examples)}
+
+        try:
+            response = self.llm.generate(prompt, system=_SYSTEM_PROMPT, max_new_tokens=self.max_new_tokens)
+        except Exception as exc:
+            # A single backend error (e.g. context-length overflow, connection
+            # drop) must not crash the whole predict_batch loop over the run.
+            return DetectorOutput(
+                tool_id=self.tool_id,
+                label=0,
+                prob_fake=0.5,
+                explanation=None,
+                failed=True,
+                meta={**meta, "error": str(exc)},
+            )
 
         try:
             payload = json.loads(extract_json_block(response.text))
@@ -125,7 +140,7 @@ class RetrievedExampleLLMDetector:
             generated_tokens=response.generated_tokens,
             peak_vram_mb=response.peak_vram_mb,
             failed=failed,
-            meta={"mode": self.mode, "k": self.k, "alpha": self.alpha, "n_examples": len(examples)},
+            meta=meta,
         )
 
     def predict_batch(self, items: List[NewsItem]) -> List[DetectorOutput]:

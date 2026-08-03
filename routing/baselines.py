@@ -14,6 +14,7 @@ from typing import Dict, List, Sequence
 
 from detectors.llm_backend import LLMBackend
 from utils.json_schema import extract_json_block
+from utils.text import truncate_chars
 from utils.types import DetectorOutput, DomainPrediction, NewsItem, RouterDecision, TOOL_IDS
 
 
@@ -125,10 +126,24 @@ class AllToolLLMAdvisor:
 
     def synthesise(self, item: NewsItem, outputs: Dict[str, DetectorOutput]) -> DetectorOutput:
         prompt = (
-            f"Target item:\n{item.text}\n\nDetector outputs:\n{_format_tool_outputs(outputs)}\n\n"
+            f"Target item:\n{truncate_chars(item.text)}\n\nDetector outputs:\n{_format_tool_outputs(outputs)}\n\n"
             "Respond with the JSON object only."
         )
-        response = self.llm.generate(prompt, system=_ADVISOR_SYSTEM_PROMPT, max_new_tokens=self.max_new_tokens)
+        upstream_latency = sum(o.latency_s for o in outputs.values())
+        upstream_tokens = sum(o.generated_tokens for o in outputs.values())
+        try:
+            response = self.llm.generate(prompt, system=_ADVISOR_SYSTEM_PROMPT, max_new_tokens=self.max_new_tokens)
+        except Exception as exc:
+            return DetectorOutput(
+                tool_id="ADVISOR",
+                label=0,
+                prob_fake=0.5,
+                explanation=f"LLM backend error; abstained: {exc}",
+                latency_s=upstream_latency,
+                generated_tokens=upstream_tokens,
+                failed=True,
+                meta={"error": str(exc)},
+            )
         try:
             payload = json.loads(extract_json_block(response.text))
             label = 1 if str(payload.get("label", "")).strip().upper() == "FAKE" else 0
@@ -139,8 +154,6 @@ class AllToolLLMAdvisor:
             label, confidence, explanation, failed = 0, 0.5, None, True
 
         prob_fake = confidence if label == 1 else 1.0 - confidence
-        upstream_latency = sum(o.latency_s for o in outputs.values())
-        upstream_tokens = sum(o.generated_tokens for o in outputs.values())
         return DetectorOutput(
             tool_id="ADVISOR",
             label=label,

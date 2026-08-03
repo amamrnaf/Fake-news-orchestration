@@ -21,6 +21,7 @@ from retrieval.index import RetrievedExample
 from routing.features import InstanceFeatures, compute_instance_features
 from routing.selector_prompt import SELECTOR_SYSTEM_PROMPT, build_selector_user_prompt
 from utils.json_schema import RouterSchemaError, parse_router_output
+from utils.text import truncate_chars
 from utils.types import DomainPrediction, NewsItem, RouterDecision
 
 RoutingMode = Literal["domain_catalogue", "instance_aware"]
@@ -67,7 +68,7 @@ class LLMRouter:
             instance_features = asdict(feats)
 
         user_prompt = build_selector_user_prompt(
-            target_text=item.text,
+            target_text=truncate_chars(item.text),
             predicted_domain_distribution=domain_pred.distribution,
             domain_entropy=domain_pred.entropy,
             affective_summary=affective_summary,
@@ -82,9 +83,15 @@ class LLMRouter:
         last_error: Optional[str] = None
         raw_text = ""
         for _ in range(self.max_retries + 1):
-            response = self.llm.generate(user_prompt, system=SELECTOR_SYSTEM_PROMPT, max_new_tokens=self.max_new_tokens)
-            raw_text = response.text
             llm_calls += 1
+            try:
+                response = self.llm.generate(
+                    user_prompt, system=SELECTOR_SYSTEM_PROMPT, max_new_tokens=self.max_new_tokens
+                )
+            except Exception as exc:
+                last_error = f"backend error: {exc}"
+                continue
+            raw_text = response.text
             try:
                 selection = parse_router_output(raw_text)
                 latency = time.perf_counter() - start

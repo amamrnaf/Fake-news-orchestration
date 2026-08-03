@@ -22,6 +22,7 @@ from rank_bm25 import BM25Okapi
 
 from detectors.llm_backend import LLMBackend
 from utils.json_schema import extract_json_block
+from utils.text import truncate_chars
 from utils.types import DetectorOutput, NewsItem
 
 _SYSTEM_PROMPT = (
@@ -101,8 +102,24 @@ class EvidenceGroundedVerifier:
             )
 
         evidence_text = "\n".join(f"[{p.doc_id}] {p.text[:500]}" for p in passages)
-        prompt = f"Retrieved passages:\n{evidence_text}\n\nClaim:\n{item.text}\n\nRespond with the JSON object only."
-        response = self.llm.generate(prompt, system=_SYSTEM_PROMPT, max_new_tokens=self.max_new_tokens)
+        prompt = (
+            f"Retrieved passages:\n{evidence_text}\n\n"
+            f"Claim:\n{truncate_chars(item.text)}\n\nRespond with the JSON object only."
+        )
+        try:
+            response = self.llm.generate(prompt, system=_SYSTEM_PROMPT, max_new_tokens=self.max_new_tokens)
+        except Exception as exc:
+            return DetectorOutput(
+                tool_id=self.tool_id,
+                label=0,
+                prob_fake=0.5,
+                evidence=evidence_text,
+                explanation=f"LLM backend error; abstained: {exc}",
+                latency_s=retrieval_latency,
+                generated_tokens=0,
+                failed=True,
+                meta={"n_passages": len(passages), "error": str(exc)},
+            )
 
         try:
             payload = json.loads(extract_json_block(response.text))
