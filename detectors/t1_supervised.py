@@ -6,7 +6,6 @@ forward pass.'
 """
 from __future__ import annotations
 
-import copy
 import json
 import os
 import time
@@ -95,7 +94,10 @@ class SupervisedTransformerDetector(Detector):
                 flush=True,
             )
             if val_f1 > best_f1:
-                best_f1, best_state, no_improve = val_f1, copy.deepcopy(self.model.state_dict()), 0
+                # Keep on CPU, not GPU -- otherwise every improving epoch holds a
+                # second full copy of the model in VRAM alongside the live one.
+                best_f1, no_improve = val_f1, 0
+                best_state = {k: v.cpu() for k, v in self.model.state_dict().items()}
             else:
                 no_improve += 1
                 if no_improve >= self.cfg.patience:

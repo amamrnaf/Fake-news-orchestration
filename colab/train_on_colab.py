@@ -83,6 +83,17 @@ def main():
             seed=seed,
             checkpoint_dir=cfg["paths"]["domain_classifier_checkpoint_dir"],
         )
+        # The winning model for this encoder is already saved to disk and its
+        # return value isn't kept here -- explicitly release its GPU memory
+        # (on top of grid_search_domain_classifier's own per-config cleanup)
+        # before the next, possibly larger, encoder starts training.
+        import gc
+
+        import torch
+
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
 
     print("\nAll done. Zip and download the checkpoints/ folder next.", flush=True)
 

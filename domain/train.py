@@ -4,7 +4,7 @@ early stopping on validation macro-F1 (Sec 4.4):
 """
 from __future__ import annotations
 
-import copy
+import gc
 import json
 import os
 import time
@@ -17,6 +17,25 @@ import numpy as np
 from domain.model import DomainClassifierModel, build_domain_input_text
 from eval.metrics import macro_f1
 from utils.types import DOMAINS, NewsItem
+
+
+def _free_gpu_model(model: Optional[DomainClassifierModel]) -> None:
+    """Releases a discarded config's GPU memory. Without this, a grid search
+    over N hyperparameter combos leaves N models resident on the GPU at once
+    (each iteration creates a fresh model but never frees the previous one),
+    which is exactly what OOM'd Colab partway through xlm-roberta-base after
+    roberta-base's and deberta-v3's 12-config searches had already piled up
+    unreleased memory."""
+    if model is None:
+        return
+    import torch
+
+    model.model.to("cpu")
+    del model.model
+    del model
+    gc.collect()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
 
 LR_GRID = [1e-5, 2e-5, 3e-5]
 BATCH_SIZE_GRID = [8, 16]
@@ -111,7 +130,10 @@ def train_one_config(
         )
         if val_f1 > best_f1:
             best_f1 = val_f1
-            best_state = copy.deepcopy(clf.model.state_dict())
+            # Keep the snapshot on CPU, not GPU -- otherwise every improving
+            # epoch holds a second full copy of the model in VRAM alongside
+            # the live training copy, needlessly doubling peak GPU usage.
+            best_state = {k: v.cpu() for k, v in clf.model.state_dict().items()}
             epochs_without_improvement = 0
         else:
             epochs_without_improvement += 1
@@ -203,7 +225,10 @@ def grid_search_domain_classifier(
             flush=True,
         )
         if f1 > best_f1:
+            _free_gpu_model(best_model)  # this config beat the previous best -- release it
             best_model, best_cfg, best_f1 = model, cfg, f1
+        else:
+            _free_gpu_model(model)  # not an improvement -- release it, don't let it pile up in VRAM
 
     if checkpoint_dir is not None and len(model_names) == 1:
         path = _checkpoint_path_for(checkpoint_dir, model_names[0])
