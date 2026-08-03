@@ -9,3 +9,4 @@ data_raw/*
 !data_raw/coco/.gitkeep
 !data_raw/pheme-rnr-dataset/.gitkeep
 logs/
+checkpoints/
