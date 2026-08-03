@@ -260,6 +260,27 @@ def grid_search_domain_classifier(
                 flush=True,
             )
             continue
+        except RuntimeError as exc:
+            if "out of memory" not in str(exc).lower():
+                raise
+            # DeBERTa-v3's disentangled attention needs ~2-3x the VRAM of
+            # standard attention for the same batch_size/max_length, so the
+            # largest combos (batch_size=16, max_length=512) can legitimately
+            # exceed a T4's 14.56GB even with per-config cleanup working
+            # correctly -- this is a real capacity limit, not a leak. Skip
+            # this one config rather than losing the whole grid search
+            # (observed: config 3/12 had already found a genuinely-trained
+            # val_f1=0.845 before config 4 OOM'd).
+            import torch
+
+            torch.cuda.empty_cache()
+            elapsed = time.perf_counter() - grid_start
+            print(
+                f"[grid search] config {i + 1}/{len(combos)} OOM (batch_size={bs}, max_length={max_len}) | "
+                f"total_elapsed={elapsed:.0f}s -- skipping",
+                flush=True,
+            )
+            continue
         elapsed = time.perf_counter() - grid_start
         print(
             f"[grid search] config {i + 1}/{len(combos)} finished: val_f1={f1:.3f} | "
