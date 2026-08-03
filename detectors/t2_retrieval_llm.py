@@ -12,6 +12,7 @@ from __future__ import annotations
 import random
 from typing import List, Literal, Optional, Sequence
 
+from detectors.base import predict_batch_with_cache
 from detectors.llm_backend import LLMBackend
 from retrieval.index import AffectiveSemanticIndex, RetrievedExample
 from utils.json_schema import extract_json_block
@@ -143,5 +144,5 @@ class RetrievedExampleLLMDetector:
             meta=meta,
         )
 
-    def predict_batch(self, items: List[NewsItem]) -> List[DetectorOutput]:
-        return [self.predict(it) for it in items]
+    def predict_batch(self, items: List[NewsItem], cache_path: Optional[str] = None) -> List[DetectorOutput]:
+        return predict_batch_with_cache(self, items, cache_path)

@@ -18,7 +18,8 @@ def main():
     train_items, val_items = split_by(items, "train"), split_by(items, "val")
 
     registry = build_registry(cfg, train_items, val_items, train_items + val_items, semantic_encoder, affective_encoder, seed, t1_checkpoint_key=f"seed{seed}")
-    catalogue, _ = build_catalogue_for(registry, val_items)
+    cache_dir = f"{cfg['paths']['output_dir']}/prediction_cache/table2_seed{seed}"
+    catalogue, _ = build_catalogue_for(registry, val_items, cache_dir=cache_dir)
 
     save_catalogue(catalogue, f"{cfg['paths']['output_dir']}/table2_validation_catalogue.json")
     rows = catalogue_to_table2_rows(catalogue)

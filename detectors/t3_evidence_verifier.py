@@ -20,6 +20,7 @@ from typing import List, Optional, Sequence
 
 from rank_bm25 import BM25Okapi
 
+from detectors.base import predict_batch_with_cache
 from detectors.llm_backend import LLMBackend
 from utils.json_schema import extract_json_block
 from utils.text import truncate_chars
@@ -144,5 +145,5 @@ class EvidenceGroundedVerifier:
             meta={"n_passages": len(passages)},
         )
 
-    def predict_batch(self, items: List[NewsItem]) -> List[DetectorOutput]:
-        return [self.predict(it) for it in items]
+    def predict_batch(self, items: List[NewsItem], cache_path: Optional[str] = None) -> List[DetectorOutput]:
+        return predict_batch_with_cache(self, items, cache_path)

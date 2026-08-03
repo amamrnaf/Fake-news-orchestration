@@ -170,6 +170,8 @@ def build_registry(
     return DetectorRegistry(t1, t2, t3)
 
 
-def build_catalogue_for(registry: DetectorRegistry, val_items: Sequence[NewsItem]) -> dict:
-    outputs_by_tool = run_detectors_on_validation(registry, val_items)
+def build_catalogue_for(
+    registry: DetectorRegistry, val_items: Sequence[NewsItem], cache_dir: Optional[str] = None
+) -> dict:
+    outputs_by_tool = run_detectors_on_validation(registry, val_items, cache_dir=cache_dir)
     return build_validation_catalogue(val_items, outputs_by_tool), outputs_by_tool

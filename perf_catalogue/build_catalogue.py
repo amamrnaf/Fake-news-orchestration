@@ -12,8 +12,9 @@ predictions, while the held-out test set is used only for final reporting.')
 """
 from __future__ import annotations
 
+import os
 from collections import defaultdict
-from typing import Dict, List, Sequence
+from typing import Dict, List, Optional, Sequence
 
 import numpy as np
 
@@ -32,11 +33,21 @@ def _group_by_domain(items: Sequence[NewsItem]) -> Dict[str, List[int]]:
 
 
 def run_detectors_on_validation(
-    registry: DetectorRegistry, val_items: Sequence[NewsItem]
+    registry: DetectorRegistry, val_items: Sequence[NewsItem], cache_dir: Optional[str] = None
 ) -> Dict[str, List[DetectorOutput]]:
     """Runs every tool on the same validation partition (common protocol,
-    not incomparable numbers copied from prior papers, Sec 3.4)."""
-    return {tool_id: registry.get(tool_id).predict_batch(list(val_items)) for tool_id in registry.all_ids()}
+    not incomparable numbers copied from prior papers, Sec 3.4).
+
+    `cache_dir`, if given, makes each tool's predictions resumable: see
+    `detectors.base.predict_batch_with_cache`. One cache file per tool, so a
+    run killed partway through only has to redo whichever tool it was on."""
+    return {
+        tool_id: registry.get(tool_id).predict_batch(
+            list(val_items),
+            cache_path=os.path.join(cache_dir, f"{tool_id}_val_cache.jsonl") if cache_dir else None,
+        )
+        for tool_id in registry.all_ids()
+    }
 
 
 def build_validation_catalogue(
