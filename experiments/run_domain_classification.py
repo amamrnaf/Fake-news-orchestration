@@ -30,6 +30,7 @@ def main():
 
     # Variant (i): text only, per candidate encoder.
     per_encoder_best = {}
+    checkpoint_dir = cfg["paths"].get("domain_classifier_checkpoint_dir")
     for encoder_name in encoders:
         model, train_cfg, val_f1 = grid_search_domain_classifier(
             [encoder_name],
@@ -39,6 +40,7 @@ def main():
             batch_size_grid=cfg["domain_classifier"]["batch_size_grid"],
             max_len_grid=cfg["domain_classifier"]["max_length_grid"],
             seed=seed,
+            checkpoint_dir=checkpoint_dir,
         )
         per_encoder_best[encoder_name] = (model, train_cfg, val_f1)
         preds = predict_domain_batch(model, [it.text for it in test_items])

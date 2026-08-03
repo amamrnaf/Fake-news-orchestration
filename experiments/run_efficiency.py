@@ -30,7 +30,7 @@ def main():
     train_items, val_items, test_items = split_by(items, "train"), split_by(items, "val"), split_by(items, "test")
     gold = [it.label for it in test_items]
 
-    registry = build_registry(cfg, train_items, val_items, train_items + val_items, semantic_encoder, affective_encoder, seed)
+    registry = build_registry(cfg, train_items, val_items, train_items + val_items, semantic_encoder, affective_encoder, seed, t1_checkpoint_key=f"seed{seed}")
     catalogue, _ = build_catalogue_for(registry, val_items)
     outputs_by_tool = {tid: registry.get(tid).predict_batch(test_items) for tid in registry.all_ids()}
 

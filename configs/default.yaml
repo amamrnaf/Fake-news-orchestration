@@ -10,6 +10,12 @@ paths:
   coco_csv: "data_raw/coco/coco_tweets.csv"
   evidence_corpus: "data_raw/evidence_corpus.jsonl"  # [{"doc_id": ..., "text": ...}, ...] for T3
   output_dir: "results"
+  # Both optional. If set and populated (e.g. copied back from the Colab
+  # notebook in colab/train_on_colab.ipynb), T1 and the domain classifier are
+  # loaded from here instead of retrained locally. Leave unset/empty to always
+  # train locally (original behaviour, nothing else changes).
+  t1_checkpoint_dir: "checkpoints/t1"
+  domain_classifier_checkpoint_dir: "checkpoints/domain_classifier"
 
 splits:
   train_size: 0.7

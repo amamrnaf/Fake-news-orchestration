@@ -8,7 +8,8 @@ incomparable scores'.
 from __future__ import annotations
 
 import argparse
-from typing import Dict, List, Sequence
+import os
+from typing import Dict, List, Optional, Sequence
 
 from perf_catalogue.build_catalogue import build_validation_catalogue, run_detectors_on_validation
 from data.amtcele import load_amtcele
@@ -71,15 +72,36 @@ def build_registry(
     semantic_encoder,
     affective_encoder,
     seed: int,
+    t1_checkpoint_key: Optional[str] = None,
 ) -> DetectorRegistry:
     """Trains T1, and wires T2/T3 to a shared LLM backend + retrieval index
     built only from `retrieval_pool` (must exclude the target/held-out
-    partition, Sec 3.2 leakage control)."""
+    partition, Sec 3.2 leakage control).
+
+    `t1_checkpoint_key` (e.g. f"seed{seed}") opts into loading/saving T1 under
+    `cfg["paths"]["t1_checkpoint_dir"]`, letting it be trained once (e.g. on a
+    Colab GPU) and reused across every script that shares the same train/val
+    split for that seed (run_catalogue, run_main_veracity, run_ablations,
+    run_routing_analysis, run_efficiency all do). Leave None (e.g. for LODO,
+    which uses a different split per fold) to always train fresh."""
     llm = build_llm_backend(cfg["llm"])
 
-    t1_cfg = T1Config(**{**cfg["t1_supervised"], "seed": seed})
-    t1 = SupervisedTransformerDetector(t1_cfg)
-    t1.fit(train_items, val_items)
+    t1_checkpoint_dir = cfg["paths"].get("t1_checkpoint_dir")
+    checkpoint_path = (
+        os.path.join(t1_checkpoint_dir, t1_checkpoint_key)
+        if t1_checkpoint_dir and t1_checkpoint_key
+        else None
+    )
+    if checkpoint_path and SupervisedTransformerDetector.has_checkpoint(checkpoint_path):
+        print(f"[T1] loaded cached checkpoint from {checkpoint_path}, skipping training", flush=True)
+        t1 = SupervisedTransformerDetector.load(checkpoint_path)
+    else:
+        t1_cfg = T1Config(**{**cfg["t1_supervised"], "seed": seed})
+        t1 = SupervisedTransformerDetector(t1_cfg)
+        t1.fit(train_items, val_items)
+        if checkpoint_path:
+            t1.save(checkpoint_path)
+            print(f"[T1] saved checkpoint to {checkpoint_path}", flush=True)
 
     index = build_index_for_pool(retrieval_pool, semantic_encoder, affective_encoder)
     t2 = RetrievedExampleLLMDetector(

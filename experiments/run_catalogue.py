@@ -17,7 +17,7 @@ def main():
     items = load_and_split_amtcele(cfg, seed, semantic_encoder=semantic_encoder)
     train_items, val_items = split_by(items, "train"), split_by(items, "val")
 
-    registry = build_registry(cfg, train_items, val_items, train_items + val_items, semantic_encoder, affective_encoder, seed)
+    registry = build_registry(cfg, train_items, val_items, train_items + val_items, semantic_encoder, affective_encoder, seed, t1_checkpoint_key=f"seed{seed}")
     catalogue, _ = build_catalogue_for(registry, val_items)
 
     save_catalogue(catalogue, f"{cfg['paths']['output_dir']}/table2_validation_catalogue.json")

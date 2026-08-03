@@ -7,8 +7,10 @@ forward pass.'
 from __future__ import annotations
 
 import copy
+import json
+import os
 import time
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from typing import List, Sequence
 
 import numpy as np
@@ -108,6 +110,24 @@ class SupervisedTransformerDetector(Detector):
         return self.tokenizer(
             texts, padding=True, truncation=True, max_length=self.cfg.max_length, return_tensors="pt"
         ).to(self.device)
+
+    def save(self, path: str) -> None:
+        os.makedirs(path, exist_ok=True)
+        self.model.save_pretrained(path)
+        self.tokenizer.save_pretrained(path)
+        with open(os.path.join(path, "t1_config.json"), "w", encoding="utf-8") as f:
+            json.dump(asdict(self.cfg), f, indent=2)
+
+    @classmethod
+    def load(cls, path: str, device: str | None = None) -> "SupervisedTransformerDetector":
+        with open(os.path.join(path, "t1_config.json"), encoding="utf-8") as f:
+            cfg_dict = json.load(f)
+        cfg_dict["model_name"] = path
+        return cls(T1Config(**cfg_dict), device=device)
+
+    @staticmethod
+    def has_checkpoint(path: str) -> bool:
+        return os.path.exists(os.path.join(path, "t1_config.json"))
 
     def _eval_macro_f1(self, items: Sequence[NewsItem]) -> float:
         preds = [self.predict(it).label for it in items]

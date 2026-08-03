@@ -7,6 +7,8 @@ p(d|x) = softmax(W h_x + b) over the 7 AMTCele domains.
 """
 from __future__ import annotations
 
+import json
+import os
 from typing import List, Optional, Sequence
 
 from retrieval.index import RetrievedExample
@@ -55,3 +57,16 @@ class DomainClassifierModel:
         return self.tokenizer(
             texts, padding=True, truncation=True, max_length=self.max_length, return_tensors="pt"
         ).to(self.device)
+
+    def save(self, path: str) -> None:
+        os.makedirs(path, exist_ok=True)
+        self.model.save_pretrained(path)
+        self.tokenizer.save_pretrained(path)
+        with open(os.path.join(path, "wrapper_meta.json"), "w", encoding="utf-8") as f:
+            json.dump({"max_length": self.max_length}, f)
+
+    @classmethod
+    def load(cls, path: str, device: str | None = None) -> "DomainClassifierModel":
+        with open(os.path.join(path, "wrapper_meta.json"), encoding="utf-8") as f:
+            meta = json.load(f)
+        return cls(model_name=path, max_length=meta["max_length"], device=device)

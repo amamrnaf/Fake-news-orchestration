@@ -5,8 +5,10 @@ early stopping on validation macro-F1 (Sec 4.4):
 from __future__ import annotations
 
 import copy
+import json
+import os
 import time
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from itertools import product
 from typing import List, Optional, Sequence
 
@@ -136,6 +138,26 @@ def evaluate_macro_f1(clf: DomainClassifierModel, texts: List[str], labels: np.n
     return macro_f1(labels.tolist(), preds)
 
 
+def _checkpoint_path_for(checkpoint_dir: str, model_name: str) -> str:
+    return os.path.join(checkpoint_dir, model_name.replace("/", "__"))
+
+
+def load_domain_classifier_checkpoint(
+    checkpoint_dir: str, model_name: str
+) -> Optional[tuple[DomainClassifierModel, TrainConfig, float]]:
+    """Loads a checkpoint saved by `grid_search_domain_classifier(..., checkpoint_dir=...)`
+    (e.g. produced on Colab), or returns None if no checkpoint exists for this encoder yet."""
+    path = _checkpoint_path_for(checkpoint_dir, model_name)
+    meta_path = os.path.join(path, "grid_search_meta.json")
+    if not os.path.exists(meta_path):
+        return None
+    with open(meta_path, encoding="utf-8") as f:
+        meta = json.load(f)
+    model = DomainClassifierModel.load(path)
+    cfg = TrainConfig(**meta["train_cfg"])
+    return model, cfg, meta["best_f1"]
+
+
 def grid_search_domain_classifier(
     model_names: Sequence[str],
     train_items: Sequence[NewsItem],
@@ -146,9 +168,24 @@ def grid_search_domain_classifier(
     batch_size_grid: Sequence[int] = BATCH_SIZE_GRID,
     max_len_grid: Sequence[int] = MAX_LEN_GRID,
     seed: int = 42,
+    checkpoint_dir: Optional[str] = None,
 ) -> tuple[DomainClassifierModel, TrainConfig, float]:
     """Selects the principal classifier by validation macro-F1 (Sec 3.3),
-    not test accuracy, across candidate encoders and hyperparameters."""
+    not test accuracy, across candidate encoders and hyperparameters.
+
+    If `checkpoint_dir` is given and already has a saved checkpoint for this
+    encoder (e.g. trained on Colab and copied back), that's loaded and the
+    entire grid search is skipped. Otherwise the grid search runs as usual
+    and, if `checkpoint_dir` is given, the winning model is saved there.
+    Intended to be called once per encoder (as `run_domain_classification.py`
+    does), so `checkpoint_dir` here is keyed by encoder name, not by combo.
+    """
+    if checkpoint_dir is not None and len(model_names) == 1:
+        cached = load_domain_classifier_checkpoint(checkpoint_dir, model_names[0])
+        if cached is not None:
+            print(f"[grid search] loaded cached checkpoint for {model_names[0]}, skipping training", flush=True)
+            return cached
+
     best_model, best_cfg, best_f1 = None, None, -1.0
     combos = list(product(model_names, lr_grid, batch_size_grid, max_len_grid))
     grid_start = time.perf_counter()
@@ -167,4 +204,12 @@ def grid_search_domain_classifier(
         )
         if f1 > best_f1:
             best_model, best_cfg, best_f1 = model, cfg, f1
+
+    if checkpoint_dir is not None and len(model_names) == 1:
+        path = _checkpoint_path_for(checkpoint_dir, model_names[0])
+        best_model.save(path)
+        with open(os.path.join(path, "grid_search_meta.json"), "w", encoding="utf-8") as f:
+            json.dump({"train_cfg": asdict(best_cfg), "best_f1": best_f1}, f, indent=2)
+        print(f"[grid search] saved checkpoint for {model_names[0]} to {path}", flush=True)
+
     return best_model, best_cfg, best_f1
