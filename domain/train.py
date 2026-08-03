@@ -5,6 +5,7 @@ early stopping on validation macro-F1 (Sec 4.4):
 from __future__ import annotations
 
 import copy
+import time
 from dataclasses import dataclass
 from itertools import product
 from typing import List, Optional, Sequence
@@ -89,6 +90,7 @@ def train_one_config(
     best_state = None
     epochs_without_improvement = 0
 
+    train_start = time.perf_counter()
     for epoch in range(cfg.epochs):
         clf.model.train()
         for texts, labels in train_loader:
@@ -99,6 +101,12 @@ def train_one_config(
             optimizer.step()
 
         val_f1 = evaluate_macro_f1(clf, val_texts, val_labels)
+        elapsed = time.perf_counter() - train_start
+        print(
+            f"  [{cfg.model_name}] epoch {epoch + 1}/{cfg.epochs} | val_f1={val_f1:.3f} | "
+            f"best_f1={max(val_f1, best_f1):.3f} | elapsed={elapsed:.0f}s",
+            flush=True,
+        )
         if val_f1 > best_f1:
             best_f1 = val_f1
             best_state = copy.deepcopy(clf.model.state_dict())
@@ -106,6 +114,7 @@ def train_one_config(
         else:
             epochs_without_improvement += 1
             if epochs_without_improvement >= cfg.patience:
+                print(f"  [{cfg.model_name}] early stopping at epoch {epoch + 1} (patience={cfg.patience})", flush=True)
                 break
 
     if best_state is not None:
@@ -141,9 +150,21 @@ def grid_search_domain_classifier(
     """Selects the principal classifier by validation macro-F1 (Sec 3.3),
     not test accuracy, across candidate encoders and hyperparameters."""
     best_model, best_cfg, best_f1 = None, None, -1.0
-    for model_name, lr, bs, max_len in product(model_names, lr_grid, batch_size_grid, max_len_grid):
+    combos = list(product(model_names, lr_grid, batch_size_grid, max_len_grid))
+    grid_start = time.perf_counter()
+    for i, (model_name, lr, bs, max_len) in enumerate(combos):
         cfg = TrainConfig(model_name=model_name, lr=lr, batch_size=bs, max_length=max_len, seed=seed)
+        print(
+            f"[grid search] config {i + 1}/{len(combos)}: {model_name} lr={lr} batch_size={bs} max_length={max_len}",
+            flush=True,
+        )
         model, f1 = train_one_config(train_items, val_items, cfg, train_neighbours, val_neighbours)
+        elapsed = time.perf_counter() - grid_start
+        print(
+            f"[grid search] config {i + 1}/{len(combos)} finished: val_f1={f1:.3f} | "
+            f"total_elapsed={elapsed:.0f}s",
+            flush=True,
+        )
         if f1 > best_f1:
             best_model, best_cfg, best_f1 = model, cfg, f1
     return best_model, best_cfg, best_f1

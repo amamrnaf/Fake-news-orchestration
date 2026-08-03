@@ -75,7 +75,8 @@ class SupervisedTransformerDetector(Detector):
         optimizer = AdamW(self.model.parameters(), lr=self.cfg.lr, weight_decay=self.cfg.weight_decay)
 
         best_f1, best_state, no_improve = -1.0, None, 0
-        for _ in range(self.cfg.epochs):
+        train_start = time.perf_counter()
+        for epoch in range(self.cfg.epochs):
             self.model.train()
             for texts, labels in loader:
                 optimizer.zero_grad()
@@ -85,11 +86,18 @@ class SupervisedTransformerDetector(Detector):
                 optimizer.step()
 
             val_f1 = self._eval_macro_f1(val_items)
+            elapsed = time.perf_counter() - train_start
+            print(
+                f"[T1 fit] epoch {epoch + 1}/{self.cfg.epochs} | val_f1={val_f1:.3f} | "
+                f"best_f1={max(val_f1, best_f1):.3f} | elapsed={elapsed:.0f}s",
+                flush=True,
+            )
             if val_f1 > best_f1:
                 best_f1, best_state, no_improve = val_f1, copy.deepcopy(self.model.state_dict()), 0
             else:
                 no_improve += 1
                 if no_improve >= self.cfg.patience:
+                    print(f"[T1 fit] early stopping at epoch {epoch + 1} (patience={self.cfg.patience})", flush=True)
                     break
 
         if best_state is not None:
