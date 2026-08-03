@@ -36,7 +36,9 @@ domain_classifier:
   candidate_encoders:
     - "roberta-base"
     - "microsoft/deberta-v3-base"
-    - "xlm-roberta-base"
+    # xlm-roberta-base dropped: OOM'd the Colab T4 on its grid search (see the
+    # memory-leak fix in domain/train.py) and was abandoned rather than rerun.
+    # Table 5 will report only these two candidate encoders.
   lr_grid: [0.00001, 0.00002, 0.00003]
   batch_size_grid: [8, 16]
   max_length_grid: [256, 512]
