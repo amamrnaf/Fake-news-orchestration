@@ -23,6 +23,11 @@ What this does, end to end:
      hyperparameter combos each) for cfg["seeds"][0], saving the winning
      config per encoder to checkpoints/domain_classifier/<encoder>/.
   5. Zips checkpoints/ for download.
+
+For redoing/resuming just one or two domain-classifier encoders (e.g. you
+already have T1 + some encoders' checkpoints locally and don't want to
+re-upload a multi-GB archive to Colab just to fill in the rest), call
+`train_domain_classifier_only()` instead of `main()` -- see its docstring.
 """
 from __future__ import annotations
 
@@ -132,6 +137,50 @@ def main():
             torch.cuda.empty_cache()
 
     print("\nAll done. Zip and download the checkpoints/ folder next.", flush=True)
+
+
+def train_domain_classifier_only(encoder_names: list[str] | None = None):
+    """Standalone entry point for redoing/resuming just specific domain-
+    classifier encoders (default: xlm-roberta-base) without touching T1 or
+    any other encoder. Needs only the code + AMTCele data -- does NOT require
+    uploading any existing checkpoints, since it doesn't check for or reuse
+    them; it just trains the requested encoder(s) fresh and saves them to
+    checkpoints/domain_classifier/<encoder>/, same as `main()` would.
+
+    Use this instead of `main()` when you already have T1 and some encoders'
+    checkpoints locally (e.g. from a previous Colab run) and only need to
+    fill in one more, so you don't have to re-upload a multi-GB checkpoint
+    archive just to resume.
+    """
+    cfg = yaml.safe_load(open("configs/default.yaml", encoding="utf-8"))
+    semantic_encoder = SemanticEncoder(cfg["retrieval"]["semantic_encoder"])
+    seed = cfg["seeds"][0]
+
+    split_items = load_and_split(cfg, seed, semantic_encoder)
+    train_items = [it for it in split_items if it.split == "train"]
+    val_items = [it for it in split_items if it.split == "val"]
+
+    for encoder_name in encoder_names or ["xlm-roberta-base"]:
+        print(f"\n=== domain classifier grid search: {encoder_name} ===", flush=True)
+        grid_search_domain_classifier(
+            [encoder_name],
+            train_items,
+            val_items,
+            lr_grid=cfg["domain_classifier"]["lr_grid"],
+            batch_size_grid=cfg["domain_classifier"]["batch_size_grid"],
+            max_len_grid=cfg["domain_classifier"]["max_length_grid"],
+            seed=seed,
+            checkpoint_dir=cfg["paths"]["domain_classifier_checkpoint_dir"],
+        )
+        import gc
+
+        import torch
+
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+
+    print("\nDone. Zip and download just checkpoints/domain_classifier/ next.", flush=True)
 
 
 if __name__ == "__main__":
