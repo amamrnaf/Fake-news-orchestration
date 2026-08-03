@@ -119,6 +119,13 @@ def train_one_config(
             enc = clf.tokenize(list(texts))
             out = clf.model(**enc, labels=labels.to(clf.device))
             out.loss.backward()
+            # DeBERTa-v3's disentangled attention is prone to NaN gradients
+            # without clipping -- observed empirically: every one of 12
+            # hyperparameter configs for microsoft/deberta-v3-base diverged to
+            # NaN weights during Colab training, reducing it to a random
+            # classifier (best_f1=0.022, ~1/7 chance for the 7 AMTCele
+            # domains). RoBERTa/XLM-R trained fine without this.
+            torch.nn.utils.clip_grad_norm_(clf.model.parameters(), max_norm=1.0)
             optimizer.step()
 
         val_f1 = evaluate_macro_f1(clf, val_texts, val_labels)

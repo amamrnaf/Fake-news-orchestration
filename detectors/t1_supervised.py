@@ -84,6 +84,11 @@ class SupervisedTransformerDetector(Detector):
                 enc = self._tokenize(texts)
                 out = self.model(**enc, labels=labels.to(self.device))
                 out.loss.backward()
+                # See domain/train.py's train_one_config for why: DeBERTa-family
+                # encoders are prone to NaN gradients without clipping. Applies
+                # here too in case cfg.model_name is ever swapped from
+                # roberta-base to a DeBERTa checkpoint.
+                torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
                 optimizer.step()
 
             val_f1 = self._eval_macro_f1(val_items)
