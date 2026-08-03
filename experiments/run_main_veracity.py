@@ -9,11 +9,10 @@ Usage: python -m experiments.run_main_veracity --config configs/default.yaml
 from __future__ import annotations
 
 from domain.predict import predict_domain_batch
-from domain.train import TrainConfig, train_one_config
 from eval.efficiency import aggregate_efficiency, record_from_outputs
 from eval.metrics import macro_f1, veracity_report
 from eval.significance import holm_correction, paired_bootstrap_test
-from experiments.common import build_catalogue_for, build_encoders, build_registry, load_and_split_amtcele, load_config, parse_args, split_by
+from experiments.common import build_catalogue_for, build_encoders, build_registry, build_routing_domain_classifier, load_and_split_amtcele, load_config, parse_args, split_by
 from retrieval.index import build_index_for_pool
 from routing.baselines import AllToolLLMAdvisor, DomainRuleRouter, confidence_weighted_ensemble, majority_class_predictions
 from routing.llm_router import LLMRouter
@@ -53,15 +52,7 @@ def main():
     outputs_by_tool = {tid: registry.get(tid).predict_batch(test_items) for tid in registry.all_ids()}
 
     # Domain predictions for router-based methods.
-    dc_cfg = cfg["domain_classifier"]
-    dom_train_cfg = TrainConfig(
-        model_name=dc_cfg["candidate_encoders"][0],
-        lr=dc_cfg["lr_grid"][0],
-        batch_size=dc_cfg["batch_size_grid"][0],
-        max_length=dc_cfg["max_length_grid"][0],
-        seed=seed,
-    )
-    domain_model, _ = train_one_config(train_items, val_items, dom_train_cfg)
+    domain_model = build_routing_domain_classifier(cfg, train_items, val_items, seed, checkpoint_key=f"seed{seed}")
     domain_preds = predict_domain_batch(domain_model, [it.text for it in test_items])
 
     retrieval_index = build_index_for_pool(train_items + val_items, semantic_encoder, affective_encoder)

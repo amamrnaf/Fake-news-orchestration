@@ -14,10 +14,15 @@ What this does, end to end:
      Reused by run_catalogue / run_main_veracity / run_ablations /
      run_routing_analysis / run_efficiency (NOT run_leave_one_domain_out,
      which uses a different split per fold).
-  3. Runs the full domain-classifier grid search (Table 5: 3 encoders x 12
+  3. Trains the lightweight single-config domain classifier used purely as
+     routing context in run_main_veracity/run_ablations/run_routing_analysis/
+     run_efficiency (NOT the Table 5 grid search below -- that one's result
+     is never reused elsewhere), once per seed, saving to
+     checkpoints/quick_domain_classifier/seed<N>/.
+  4. Runs the full domain-classifier grid search (Table 5: 3 encoders x 12
      hyperparameter combos each) for cfg["seeds"][0], saving the winning
      config per encoder to checkpoints/domain_classifier/<encoder>/.
-  4. Zips checkpoints/ for download.
+  5. Zips checkpoints/ for download.
 """
 from __future__ import annotations
 
@@ -26,7 +31,8 @@ import yaml
 from data.amtcele import load_amtcele
 from data.splits import stratified_split
 from detectors.t1_supervised import SupervisedTransformerDetector, T1Config
-from domain.train import grid_search_domain_classifier
+from domain.model import DomainClassifierModel
+from domain.train import TrainConfig, grid_search_domain_classifier, train_one_config
 from retrieval.embeddings import SemanticEncoder
 
 
@@ -64,6 +70,36 @@ def main():
         t1.fit(train_items, val_items)
         t1.save(checkpoint_path)
         print(f"saved T1 checkpoint to {checkpoint_path}", flush=True)
+
+    # --- Quick single-config domain classifier (routing context for Tables
+    # 6/8/10/11), once per seed. Mirrors experiments.common's
+    # build_routing_domain_classifier, duplicated here rather than imported
+    # since that module pulls in rank_bm25/openai, which this notebook
+    # deliberately doesn't install. ---
+    for seed in cfg["seeds"]:
+        print(f"\n=== quick domain classifier, seed={seed} ===", flush=True)
+        split_items = load_and_split(cfg, seed, semantic_encoder)
+        train_items = [it for it in split_items if it.split == "train"]
+        val_items = [it for it in split_items if it.split == "val"]
+
+        checkpoint_path = f"{cfg['paths']['quick_domain_classifier_checkpoint_dir']}/seed{seed}"
+        import os
+
+        if os.path.exists(os.path.join(checkpoint_path, "wrapper_meta.json")):
+            print(f"checkpoint already exists at {checkpoint_path}, skipping", flush=True)
+            continue
+
+        dc_cfg = cfg["domain_classifier"]
+        dom_cfg = TrainConfig(
+            model_name=dc_cfg["candidate_encoders"][0],
+            lr=dc_cfg["lr_grid"][0],
+            batch_size=dc_cfg["batch_size_grid"][0],
+            max_length=dc_cfg["max_length_grid"][0],
+            seed=seed,
+        )
+        domain_model, _ = train_one_config(train_items, val_items, dom_cfg)
+        domain_model.save(checkpoint_path)
+        print(f"saved quick domain classifier checkpoint to {checkpoint_path}", flush=True)
 
     # --- Domain classifier grid search (Table 5), single seed ---
     seed = cfg["seeds"][0]

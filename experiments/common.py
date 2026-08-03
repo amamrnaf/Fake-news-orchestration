@@ -19,6 +19,8 @@ from detectors.registry import DetectorRegistry
 from detectors.t1_supervised import SupervisedTransformerDetector, T1Config
 from detectors.t2_retrieval_llm import RetrievedExampleLLMDetector
 from detectors.t3_evidence_verifier import EvidenceCorpus, EvidenceGroundedVerifier, EvidencePassage
+from domain.model import DomainClassifierModel
+from domain.train import TrainConfig, train_one_config
 from retrieval.embeddings import AffectiveEncoder, SemanticEncoder
 from retrieval.index import build_index_for_pool
 from utils.io import load_yaml, read_jsonl
@@ -62,6 +64,46 @@ def build_encoders(cfg: dict):
 def build_evidence_corpus(cfg: dict) -> EvidenceCorpus:
     passages = [EvidencePassage(doc_id=row["doc_id"], text=row["text"]) for row in read_jsonl(cfg["paths"]["evidence_corpus"])]
     return EvidenceCorpus(passages)
+
+
+def build_routing_domain_classifier(
+    cfg: dict,
+    train_items: Sequence[NewsItem],
+    val_items: Sequence[NewsItem],
+    seed: int,
+    checkpoint_key: Optional[str] = None,
+) -> DomainClassifierModel:
+    """The lightweight, single-config domain classifier used by
+    run_main_veracity/run_ablations/run_routing_analysis/run_efficiency purely
+    as routing context (NOT the full 3-encoder x 12-config grid search from
+    run_domain_classification.py / Table 5 -- that one's result is never reused
+    elsewhere in the pipeline). Always trains `candidate_encoders[0]` with the
+    first value of each hyperparameter grid.
+
+    `checkpoint_key` (e.g. f"seed{seed}") opts into caching under
+    cfg["paths"]["quick_domain_classifier_checkpoint_dir"], the same pattern as
+    `build_registry`'s `t1_checkpoint_key`. Leave None for
+    run_leave_one_domain_out, which uses a different split per fold."""
+    checkpoint_dir = cfg["paths"].get("quick_domain_classifier_checkpoint_dir")
+    checkpoint_path = os.path.join(checkpoint_dir, checkpoint_key) if checkpoint_dir and checkpoint_key else None
+
+    if checkpoint_path and os.path.exists(os.path.join(checkpoint_path, "wrapper_meta.json")):
+        print(f"[domain classifier] loaded cached checkpoint from {checkpoint_path}, skipping training", flush=True)
+        return DomainClassifierModel.load(checkpoint_path)
+
+    dc_cfg = cfg["domain_classifier"]
+    dom_cfg = TrainConfig(
+        model_name=dc_cfg["candidate_encoders"][0],
+        lr=dc_cfg["lr_grid"][0],
+        batch_size=dc_cfg["batch_size_grid"][0],
+        max_length=dc_cfg["max_length_grid"][0],
+        seed=seed,
+    )
+    domain_model, _ = train_one_config(train_items, val_items, dom_cfg)
+    if checkpoint_path:
+        domain_model.save(checkpoint_path)
+        print(f"[domain classifier] saved checkpoint to {checkpoint_path}", flush=True)
+    return domain_model
 
 
 def build_registry(
