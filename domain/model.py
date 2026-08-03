@@ -47,8 +47,16 @@ class DomainClassifierModel:
         self.model_name = model_name
         self.max_length = max_length
         self.tokenizer = AutoTokenizer.from_pretrained(model_name)
+        # Explicit fp32: without this, some transformers versions resolve a
+        # checkpoint's dtype from hub metadata on CUDA, and DeBERTa-v3 trained
+        # in fp16 produces NaN almost immediately (AdamW's default eps=1e-8
+        # underflows fp16 precision). Every one of 12 configs for
+        # microsoft/deberta-v3-base diverged to NaN from epoch 1 on Colab's
+        # T4 with no explicit dtype; gradient clipping alone didn't help,
+        # consistent with the NaN originating in the forward pass, not
+        # exploding-but-finite gradients.
         self.model = AutoModelForSequenceClassification.from_pretrained(
-            model_name, num_labels=num_labels
+            model_name, num_labels=num_labels, torch_dtype=torch.float32
         ).to(self.device)
         self.id2label = {i: d for i, d in enumerate(DOMAINS)}
         self.label2id = {d: i for i, d in enumerate(DOMAINS)}

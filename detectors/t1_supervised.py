@@ -44,8 +44,9 @@ class SupervisedTransformerDetector(Detector):
         self.cfg = cfg
         self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
         self.tokenizer = AutoTokenizer.from_pretrained(cfg.model_name)
+        # Explicit fp32 -- see domain/model.py's DomainClassifierModel for why.
         self.model = AutoModelForSequenceClassification.from_pretrained(
-            cfg.model_name, num_labels=2
+            cfg.model_name, num_labels=2, torch_dtype=torch.float32
         ).to(self.device)
 
     def fit(self, train_items: Sequence[NewsItem], val_items: Sequence[NewsItem]) -> float:
@@ -79,10 +80,18 @@ class SupervisedTransformerDetector(Detector):
         train_start = time.perf_counter()
         for epoch in range(self.cfg.epochs):
             self.model.train()
-            for texts, labels in loader:
+            for step, (texts, labels) in enumerate(loader):
                 optimizer.zero_grad()
                 enc = self._tokenize(texts)
                 out = self.model(**enc, labels=labels.to(self.device))
+                if not torch.isfinite(out.loss):
+                    # See domain/train.py's train_one_config for why this
+                    # matters: fail immediately rather than silently
+                    # "training" on NaN for multiple epochs.
+                    raise FloatingPointError(
+                        f"[T1 fit, {self.cfg.model_name}] non-finite loss ({out.loss.item()}) at epoch "
+                        f"{epoch + 1}, step {step + 1} -- stopping immediately rather than continuing on garbage."
+                    )
                 out.loss.backward()
                 # See domain/train.py's train_one_config for why: DeBERTa-family
                 # encoders are prone to NaN gradients without clipping. Applies

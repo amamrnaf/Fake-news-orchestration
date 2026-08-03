@@ -114,17 +114,27 @@ def train_one_config(
     train_start = time.perf_counter()
     for epoch in range(cfg.epochs):
         clf.model.train()
-        for texts, labels in train_loader:
+        for step, (texts, labels) in enumerate(train_loader):
             optimizer.zero_grad()
             enc = clf.tokenize(list(texts))
             out = clf.model(**enc, labels=labels.to(clf.device))
+            if not torch.isfinite(out.loss):
+                # Fail loudly, immediately -- not after epochs of silently
+                # "training" on NaN. This is exactly how microsoft/deberta-v3-base
+                # burned ~1hr of Colab GPU time across 12 configs before anyone
+                # noticed: loss was NaN from batch 1, every config, but nothing
+                # checked for it until the final checkpoint was already saved.
+                raise FloatingPointError(
+                    f"[{cfg.model_name}] non-finite loss ({out.loss.item()}) at epoch {epoch + 1}, "
+                    f"step {step + 1} -- stopping immediately rather than continuing on garbage. "
+                    "Common causes: fp16/bf16 auto-loading on CUDA (see torch_dtype in DomainClassifierModel), "
+                    "learning rate too high, or a numerically unstable architecture (DeBERTa-v3's disentangled "
+                    "attention is a known case)."
+                )
             out.loss.backward()
-            # DeBERTa-v3's disentangled attention is prone to NaN gradients
-            # without clipping -- observed empirically: every one of 12
-            # hyperparameter configs for microsoft/deberta-v3-base diverged to
-            # NaN weights during Colab training, reducing it to a random
-            # classifier (best_f1=0.022, ~1/7 chance for the 7 AMTCele
-            # domains). RoBERTa/XLM-R trained fine without this.
+            # Defensive: bounds gradient norm in case of a genuine explosion
+            # (as opposed to the immediate-NaN case above, which this alone
+            # does not fix -- see the fp32 dtype fix in DomainClassifierModel).
             torch.nn.utils.clip_grad_norm_(clf.model.parameters(), max_norm=1.0)
             optimizer.step()
 
@@ -224,7 +234,19 @@ def grid_search_domain_classifier(
             f"[grid search] config {i + 1}/{len(combos)}: {model_name} lr={lr} batch_size={bs} max_length={max_len}",
             flush=True,
         )
-        model, f1 = train_one_config(train_items, val_items, cfg, train_neighbours, val_neighbours)
+        try:
+            model, f1 = train_one_config(train_items, val_items, cfg, train_neighbours, val_neighbours)
+        except FloatingPointError as exc:
+            # Don't let one broken config (or a systematically unstable
+            # encoder, as microsoft/deberta-v3-base turned out to be) abort
+            # the whole grid search -- other encoders after this one in
+            # candidate_encoders still deserve their turn. Skip and move on.
+            elapsed = time.perf_counter() - grid_start
+            print(
+                f"[grid search] config {i + 1}/{len(combos)} FAILED ({exc}) | total_elapsed={elapsed:.0f}s -- skipping",
+                flush=True,
+            )
+            continue
         elapsed = time.perf_counter() - grid_start
         print(
             f"[grid search] config {i + 1}/{len(combos)} finished: val_f1={f1:.3f} | "
@@ -236,6 +258,12 @@ def grid_search_domain_classifier(
             best_model, best_cfg, best_f1 = model, cfg, f1
         else:
             _free_gpu_model(model)  # not an improvement -- release it, don't let it pile up in VRAM
+
+    if best_model is None:
+        raise RuntimeError(
+            f"[grid search] every config failed for {model_names} -- nothing to save. "
+            "Check the FAILED lines above for the underlying error."
+        )
 
     if checkpoint_dir is not None and len(model_names) == 1:
         path = _checkpoint_path_for(checkpoint_dir, model_names[0])
