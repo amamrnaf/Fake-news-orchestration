@@ -69,6 +69,7 @@ def train_one_config(
     import torch
     from torch.optim import AdamW
     from torch.utils.data import DataLoader, Dataset
+    from transformers import get_linear_schedule_with_warmup
 
     from utils.seed import set_seed
 
@@ -106,6 +107,14 @@ def train_one_config(
     )
 
     optimizer = AdamW(clf.model.parameters(), lr=cfg.lr, weight_decay=cfg.weight_decay)
+    # DeBERTa-v2/v3 is documented to train unstably with a flat constant LR
+    # from step 1 (unlike RoBERTa/XLM-R, which tolerated it fine here) --
+    # linear warmup over the first 10% of steps, then linear decay, is the
+    # standard fix. Harmless for architectures that don't need it.
+    total_steps = len(train_loader) * cfg.epochs
+    scheduler = get_linear_schedule_with_warmup(
+        optimizer, num_warmup_steps=max(1, int(0.1 * total_steps)), num_training_steps=total_steps
+    )
 
     best_f1 = -1.0
     best_state = None
@@ -114,6 +123,7 @@ def train_one_config(
     train_start = time.perf_counter()
     for epoch in range(cfg.epochs):
         clf.model.train()
+        epoch_loss_sum, epoch_loss_n = 0.0, 0
         for step, (texts, labels) in enumerate(train_loader):
             optimizer.zero_grad()
             enc = clf.tokenize(list(texts))
@@ -131,18 +141,21 @@ def train_one_config(
                     "learning rate too high, or a numerically unstable architecture (DeBERTa-v3's disentangled "
                     "attention is a known case)."
                 )
+            epoch_loss_sum += out.loss.item()
+            epoch_loss_n += 1
             out.loss.backward()
             # Defensive: bounds gradient norm in case of a genuine explosion
             # (as opposed to the immediate-NaN case above, which this alone
             # does not fix -- see the fp32 dtype fix in DomainClassifierModel).
             torch.nn.utils.clip_grad_norm_(clf.model.parameters(), max_norm=1.0)
             optimizer.step()
+            scheduler.step()
 
         val_f1 = evaluate_macro_f1(clf, val_texts, val_labels)
         elapsed = time.perf_counter() - train_start
         print(
-            f"  [{cfg.model_name}] epoch {epoch + 1}/{cfg.epochs} | val_f1={val_f1:.3f} | "
-            f"best_f1={max(val_f1, best_f1):.3f} | elapsed={elapsed:.0f}s",
+            f"  [{cfg.model_name}] epoch {epoch + 1}/{cfg.epochs} | train_loss={epoch_loss_sum / epoch_loss_n:.4f} | "
+            f"val_f1={val_f1:.3f} | best_f1={max(val_f1, best_f1):.3f} | elapsed={elapsed:.0f}s",
             flush=True,
         )
         if val_f1 > best_f1:
