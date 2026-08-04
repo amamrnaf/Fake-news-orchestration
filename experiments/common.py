@@ -175,3 +175,20 @@ def build_catalogue_for(
 ) -> dict:
     outputs_by_tool = run_detectors_on_validation(registry, val_items, cache_dir=cache_dir)
     return build_validation_catalogue(val_items, outputs_by_tool), outputs_by_tool
+
+
+def prediction_cache_dir(cfg: dict, seed: int) -> str:
+    """Shared cache root for T1/T2/T3 predictions, keyed only by seed --
+    reused across every script whose `registry` is built the same way
+    (run_catalogue, run_main_veracity, run_ablations, run_routing_analysis,
+    run_efficiency all call build_registry identically for a given seed, so
+    a prediction for a given item_id from any one of them is valid for all
+    the others). Deliberately NOT used by run_leave_one_domain_out (T2's
+    retrieval index differs per fold, so the same item can get a different,
+    correct prediction in different folds) or run_transfer_pheme_coco
+    (different dataset, different items)."""
+    return os.path.join(cfg["paths"]["output_dir"], "prediction_cache", f"seed{seed}")
+
+
+def cache_path_for(cache_dir: str, tool_id: str, partition: str) -> str:
+    return os.path.join(cache_dir, f"{tool_id}_{partition}_cache.jsonl")

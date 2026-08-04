@@ -10,7 +10,7 @@ from __future__ import annotations
 from domain.predict import predict_domain_batch
 from eval.efficiency import aggregate_efficiency, record_from_outputs, relative_cost
 from eval.metrics import macro_f1
-from experiments.common import build_catalogue_for, build_encoders, build_registry, build_routing_domain_classifier, load_and_split_amtcele, load_config, parse_args, split_by
+from experiments.common import build_catalogue_for, build_encoders, build_registry, build_routing_domain_classifier, cache_path_for, load_and_split_amtcele, load_config, parse_args, prediction_cache_dir, split_by
 from routing.baselines import AllToolLLMAdvisor, confidence_weighted_ensemble
 from routing.llm_router import LLMRouter
 from routing.oracle import outputs_from_decisions
@@ -30,8 +30,17 @@ def main():
     gold = [it.label for it in test_items]
 
     registry = build_registry(cfg, train_items, val_items, train_items + val_items, semantic_encoder, affective_encoder, seed, t1_checkpoint_key=f"seed{seed}")
-    catalogue, _ = build_catalogue_for(registry, val_items)
-    outputs_by_tool = {tid: registry.get(tid).predict_batch(test_items) for tid in registry.all_ids()}
+    # NOTE: this table measures latency/cost -- if T2/T3 predictions are
+    # reused from another table's cached run, the reported timings reflect
+    # whatever machine load existed *then*, not a clean dedicated measurement.
+    # Clear results/prediction_cache/seed{seed}/ first if you want Table 11's
+    # numbers freshly timed rather than possibly inherited from Table 6/8/10.
+    cache_dir = prediction_cache_dir(cfg, seed)
+    catalogue, _ = build_catalogue_for(registry, val_items, cache_dir=cache_dir)
+    outputs_by_tool = {
+        tid: registry.get(tid).predict_batch(test_items, cache_path=cache_path_for(cache_dir, tid, "test"))
+        for tid in registry.all_ids()
+    }
 
     domain_model = build_routing_domain_classifier(cfg, train_items, val_items, seed, checkpoint_key=f"seed{seed}")
     domain_preds = predict_domain_batch(domain_model, [it.text for it in test_items])

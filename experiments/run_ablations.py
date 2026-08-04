@@ -26,7 +26,7 @@ from dataclasses import replace
 
 from domain.predict import predict_domain_batch
 from eval.metrics import expected_calibration_error, macro_f1
-from experiments.common import build_catalogue_for, build_encoders, build_registry, build_routing_domain_classifier, load_and_split_amtcele, load_config, parse_args, split_by
+from experiments.common import build_catalogue_for, build_encoders, build_registry, build_routing_domain_classifier, cache_path_for, load_and_split_amtcele, load_config, parse_args, prediction_cache_dir, split_by
 from retrieval.index import build_index_for_pool
 from routing.baselines import confidence_weighted_ensemble
 from routing.llm_router import LLMRouter
@@ -88,8 +88,12 @@ def main():
     gold = [it.label for it in test_items]
 
     registry = build_registry(cfg, train_items, val_items, train_items + val_items, semantic_encoder, affective_encoder, seed, t1_checkpoint_key=f"seed{seed}")
-    catalogue, _ = build_catalogue_for(registry, val_items)
-    outputs_by_tool = {tid: registry.get(tid).predict_batch(test_items) for tid in registry.all_ids()}
+    cache_dir = prediction_cache_dir(cfg, seed)
+    catalogue, _ = build_catalogue_for(registry, val_items, cache_dir=cache_dir)
+    outputs_by_tool = {
+        tid: registry.get(tid).predict_batch(test_items, cache_path=cache_path_for(cache_dir, tid, "test"))
+        for tid in registry.all_ids()
+    }
     correct_sets = correct_tools_per_item(test_items, outputs_by_tool)
 
     domain_model = build_routing_domain_classifier(cfg, train_items, val_items, seed, checkpoint_key=f"seed{seed}")
