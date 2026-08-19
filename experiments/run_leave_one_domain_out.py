@@ -9,7 +9,7 @@ Usage: python -m experiments.run_leave_one_domain_out --config configs/default.y
 """
 from __future__ import annotations
 
-import time
+import os
 from typing import Dict, List
 
 from data.amtcele import load_amtcele
@@ -22,9 +22,10 @@ from retrieval.index import build_index_for_pool
 from routing.baselines import DomainRuleRouter
 from routing.llm_router import LLMRouter
 from routing.oracle import oracle_select, outputs_from_decisions
+from utils.cache import cached_map
 from utils.io import write_json
 from utils.lm_studio import load_llm, unload_llm
-from utils.types import DOMAINS
+from utils.types import DOMAINS, RouterDecision
 
 
 def main():
@@ -70,8 +71,20 @@ def main():
         domain_preds = predict_domain_batch(domain_model, [it.text for it in held_out_items])
         load_llm(cfg["llm"]["model_name"])
 
-        catalogue, _ = build_catalogue_for(registry, val_items)
-        outputs_by_tool = {tid: registry.get(tid).predict_batch(held_out_items) for tid in registry.all_ids()}
+        # Cache per fold, not shared across folds: T2's retrieval index (and
+        # therefore its predictions) genuinely differs fold to fold, so a
+        # cached item_id prediction from fold 1 would be wrong reused in
+        # fold 2. Safe within a fold, though -- a resumed run of the same
+        # fold has the same retrieval index.
+        fold_cache_dir = os.path.join(cfg["paths"]["output_dir"], "prediction_cache", f"lodo_{held_out_domain}")
+
+        catalogue, _ = build_catalogue_for(registry, val_items, cache_dir=fold_cache_dir)
+        outputs_by_tool = {
+            tid: registry.get(tid).predict_batch(
+                held_out_items, cache_path=os.path.join(fold_cache_dir, f"{tid}_heldout_cache.jsonl")
+            )
+            for tid in registry.all_ids()
+        }
 
         best_single_f1 = max(macro_f1(gold, [o.label for o in outputs_by_tool[tid]]) for tid in registry.all_ids())
 
@@ -90,23 +103,21 @@ def main():
             max_retries=cfg["router"]["max_retries"], max_new_tokens=cfg["router"]["max_new_tokens"],
         )
         aff_summary = affective_encoder.encode([it.text for it in held_out_items])
-        proposed_decisions = []
-        router_start = time.perf_counter()
-        for i in range(len(held_out_items)):
-            proposed_decisions.append(
-                router.select(
-                    held_out_items[i], domain_preds[i],
-                    affective_summary={affective_encoder.labels[j]: float(aff_summary[i][j]) for j in range(len(affective_encoder.labels))},
-                    retrieved_examples=retrieved[i],
-                )
+
+        def _select(i: int) -> RouterDecision:
+            return router.select(
+                held_out_items[i], domain_preds[i],
+                affective_summary={affective_encoder.labels[j]: float(aff_summary[i][j]) for j in range(len(affective_encoder.labels))},
+                retrieved_examples=retrieved[i],
             )
-            elapsed = time.perf_counter() - router_start
-            rate = (i + 1) / elapsed if elapsed > 0 else 0.0
-            eta = (len(held_out_items) - i - 1) / rate if rate > 0 else float("nan")
-            print(
-                f"[router:{held_out_domain}] {i + 1}/{len(held_out_items)} done | elapsed={elapsed:.0f}s | eta={eta:.0f}s",
-                flush=True,
-            )
+
+        proposed_decisions = cached_map(
+            [it.id for it in held_out_items],
+            _select,
+            lambda d: RouterDecision(**d),
+            cache_path=os.path.join(fold_cache_dir, "router_heldout_cache.jsonl"),
+            label=f"router:{held_out_domain}",
+        )
         proposed_f1 = macro_f1(gold, [o.label for o in outputs_from_decisions(proposed_decisions, outputs_by_tool)])
 
         oracle_decisions = oracle_select(held_out_items, outputs_by_tool)
