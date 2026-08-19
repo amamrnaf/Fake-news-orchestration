@@ -9,6 +9,7 @@ Usage: python -m experiments.run_leave_one_domain_out --config configs/default.y
 """
 from __future__ import annotations
 
+import time
 from typing import Dict, List
 
 from data.amtcele import load_amtcele
@@ -35,7 +36,8 @@ def main():
     domains_present = [d for d in DOMAINS if d in available_groups(all_items)]
 
     per_domain_rows: List[dict] = []
-    for held_out_domain in domains_present:
+    for fold_i, held_out_domain in enumerate(domains_present):
+        print(f"\n=== LODO fold {fold_i + 1}/{len(domains_present)}: held_out_domain={held_out_domain!r} ===", flush=True)
         split_dict = leave_one_group_out(all_items, held_out_domain)
 
         # Source domains only are split into train/val; the held-out domain
@@ -78,14 +80,23 @@ def main():
             max_retries=cfg["router"]["max_retries"], max_new_tokens=cfg["router"]["max_new_tokens"],
         )
         aff_summary = affective_encoder.encode([it.text for it in held_out_items])
-        proposed_decisions = [
-            router.select(
-                held_out_items[i], domain_preds[i],
-                affective_summary={affective_encoder.labels[j]: float(aff_summary[i][j]) for j in range(len(affective_encoder.labels))},
-                retrieved_examples=retrieved[i],
+        proposed_decisions = []
+        router_start = time.perf_counter()
+        for i in range(len(held_out_items)):
+            proposed_decisions.append(
+                router.select(
+                    held_out_items[i], domain_preds[i],
+                    affective_summary={affective_encoder.labels[j]: float(aff_summary[i][j]) for j in range(len(affective_encoder.labels))},
+                    retrieved_examples=retrieved[i],
+                )
             )
-            for i in range(len(held_out_items))
-        ]
+            elapsed = time.perf_counter() - router_start
+            rate = (i + 1) / elapsed if elapsed > 0 else 0.0
+            eta = (len(held_out_items) - i - 1) / rate if rate > 0 else float("nan")
+            print(
+                f"[router:{held_out_domain}] {i + 1}/{len(held_out_items)} done | elapsed={elapsed:.0f}s | eta={eta:.0f}s",
+                flush=True,
+            )
         proposed_f1 = macro_f1(gold, [o.label for o in outputs_from_decisions(proposed_decisions, outputs_by_tool)])
 
         oracle_decisions = oracle_select(held_out_items, outputs_by_tool)
