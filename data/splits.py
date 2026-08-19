@@ -131,14 +131,24 @@ def stratified_split(
     train_keys, rest_keys, train_lbls, rest_lbls = train_test_split(
         unique_keys, safe_strat, train_size=train_size, random_state=seed, stratify=safe_strat
     )
-    rel_val = val_size / (val_size + test_size)
-    rest_label_counts = defaultdict(int)
-    for l in rest_lbls:
-        rest_label_counts[l] += 1
-    safe_rest = [l if rest_label_counts[l] >= 2 else "rare" for l in rest_lbls]
-    val_keys, test_keys = train_test_split(
-        rest_keys, train_size=rel_val, random_state=seed, stratify=safe_rest
-    )
+    if test_size <= 0:
+        # No test partition wanted (e.g. run_leave_one_domain_out, which
+        # merges val+test downstream anyway) -- skip the second split
+        # entirely. Doing it via a near-zero test_size instead breaks:
+        # sklearn still carves out >=1 sample for any non-zero fraction, and
+        # stratifying a 1-sample test set across N>1 classes raises
+        # ValueError (observed: 12 domain|label strata, test_size resolved
+        # to 1).
+        val_keys, test_keys = rest_keys, []
+    else:
+        rel_val = val_size / (val_size + test_size)
+        rest_label_counts = defaultdict(int)
+        for l in rest_lbls:
+            rest_label_counts[l] += 1
+        safe_rest = [l if rest_label_counts[l] >= 2 else "rare" for l in rest_lbls]
+        val_keys, test_keys = train_test_split(
+            rest_keys, train_size=rel_val, random_state=seed, stratify=safe_rest
+        )
 
     split_of_key = {k: "train" for k in train_keys}
     split_of_key.update({k: "val" for k in val_keys})

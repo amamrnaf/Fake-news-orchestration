@@ -23,6 +23,7 @@ from routing.baselines import DomainRuleRouter
 from routing.llm_router import LLMRouter
 from routing.oracle import oracle_select, outputs_from_decisions
 from utils.io import write_json
+from utils.lm_studio import load_llm, unload_llm
 from utils.types import DOMAINS
 
 
@@ -44,18 +45,21 @@ def main():
         # itself is evaluated wholesale (Sec 4.2: no target-domain validation
         # score is available to the router).
         source_train_val = stratified_split(
-            split_dict["source"], train_size=0.85, val_size=0.15, test_size=0.0000001, seed=seed, semantic_encoder=semantic_encoder
+            split_dict["source"], train_size=0.85, val_size=0.15, test_size=0.0, seed=seed, semantic_encoder=semantic_encoder
         )
         train_items = [it for it in source_train_val if it.split == "train"]
         val_items = [it for it in source_train_val if it.split in ("val", "test")]
         held_out_items = split_dict["held_out"]
         gold = [it.label for it in held_out_items]
 
+        # Unload the LLM for the whole GPU-training window (T1 inside
+        # build_registry, then the domain classifier) so both get full VRAM
+        # headroom instead of sharing ~3GB with LM Studio's resident model.
+        # Confirmed empirically: unload is near-instant, reload ~5s -- cheap
+        # against this fold's LLM-call cost (T2/T3/router), so doing this
+        # once per fold (not per training call) keeps overhead negligible.
+        unload_llm(cfg["llm"]["model_name"])
         registry = build_registry(cfg, train_items, val_items, train_items + val_items, semantic_encoder, affective_encoder, seed)
-        catalogue, _ = build_catalogue_for(registry, val_items)
-        outputs_by_tool = {tid: registry.get(tid).predict_batch(held_out_items) for tid in registry.all_ids()}
-
-        best_single_f1 = max(macro_f1(gold, [o.label for o in outputs_by_tool[tid]]) for tid in registry.all_ids())
 
         dc_cfg = cfg["domain_classifier"]
         dom_cfg = TrainConfig(
@@ -64,6 +68,12 @@ def main():
         )
         domain_model, _ = train_one_config(train_items, val_items, dom_cfg)
         domain_preds = predict_domain_batch(domain_model, [it.text for it in held_out_items])
+        load_llm(cfg["llm"]["model_name"])
+
+        catalogue, _ = build_catalogue_for(registry, val_items)
+        outputs_by_tool = {tid: registry.get(tid).predict_batch(held_out_items) for tid in registry.all_ids()}
+
+        best_single_f1 = max(macro_f1(gold, [o.label for o in outputs_by_tool[tid]]) for tid in registry.all_ids())
 
         domain_rule = DomainRuleRouter(catalogue)
         dr_decisions = [domain_rule.select(held_out_items[i], domain_preds[i]) for i in range(len(held_out_items))]
