@@ -1,0 +1,25 @@
+{
+  "labels": [
+    "T1",
+    "T2",
+    "T3"
+  ],
+  "matrix": [
+    [
+      138,
+      0,
+      1
+    ],
+    [
+      2,
+      0,
+      0
+    ],
+    [
+      4,
+      0,
+      0
+    ]
+  ],
+  "note": "rows=oracle/best tool, columns=selected tool (LLM full-context router)"
+}

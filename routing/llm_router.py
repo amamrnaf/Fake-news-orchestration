@@ -36,7 +36,9 @@ class LLMRouter:
         mode: RoutingMode = "instance_aware",
         max_retries: int = 2,
         max_new_tokens: int = 150,
+        system_prompt: str = SELECTOR_SYSTEM_PROMPT,
     ):
+        self.system_prompt = system_prompt
         self.llm = llm
         self.tool_descriptions = tool_descriptions
         self.validation_catalogue = validation_catalogue
@@ -86,7 +88,7 @@ class LLMRouter:
             llm_calls += 1
             try:
                 response = self.llm.generate(
-                    user_prompt, system=SELECTOR_SYSTEM_PROMPT, max_new_tokens=self.max_new_tokens
+                    user_prompt, system=self.system_prompt, max_new_tokens=self.max_new_tokens
                 )
             except Exception as exc:
                 last_error = f"backend error: {exc}"

@@ -1,0 +1,101 @@
+[
+  {
+    "comparison": "Proposed router vs Supervised transformer",
+    "macro_f1_difference": 0.0,
+    "ci_95_low": 0.0,
+    "ci_95_high": 0.0,
+    "p_value": 1.0,
+    "holm_adjusted_p": 1.0,
+    "significant_after_holm": false
+  },
+  {
+    "comparison": "Domain-rule router vs Supervised transformer",
+    "macro_f1_difference": 0.0,
+    "ci_95_low": 0.0,
+    "ci_95_high": 0.0,
+    "p_value": 1.0,
+    "holm_adjusted_p": 1.0,
+    "significant_after_holm": false
+  },
+  {
+    "comparison": "LLM + affective retrieval vs LLM + semantic retrieval",
+    "macro_f1_difference": 0.11107606344628695,
+    "ci_95_low": 0.03716520935003563,
+    "ci_95_high": 0.18632362983785167,
+    "p_value": 0.0028,
+    "holm_adjusted_p": 0.0224,
+    "significant_after_holm": true
+  },
+  {
+    "comparison": "Performance-weighted fusion vs Supervised transformer",
+    "macro_f1_difference": -0.08273630325289605,
+    "ci_95_low": -0.13270750842990517,
+    "ci_95_high": -0.03473544744907928,
+    "p_value": 0.0008,
+    "holm_adjusted_p": 0.007200000000000001,
+    "significant_after_holm": true
+  },
+  {
+    "comparison": "Stacked logistic fusion vs Supervised transformer",
+    "macro_f1_difference": 0.0,
+    "ci_95_low": -0.02074480582468352,
+    "ci_95_high": 0.0207489220158591,
+    "p_value": 1.0,
+    "holm_adjusted_p": 1.0,
+    "significant_after_holm": false
+  },
+  {
+    "comparison": "Supervised-transformer-first escalation vs Supervised transformer",
+    "macro_f1_difference": 0.0,
+    "ci_95_low": 0.0,
+    "ci_95_high": 0.0,
+    "p_value": 1.0,
+    "holm_adjusted_p": 1.0,
+    "significant_after_holm": false
+  },
+  {
+    "comparison": "Performance-weighted fusion vs Confidence ensemble",
+    "macro_f1_difference": 0.013856768692288579,
+    "ci_95_low": 0.0,
+    "ci_95_high": 0.03496329275027066,
+    "p_value": 0.2604,
+    "holm_adjusted_p": 1.0,
+    "significant_after_holm": false
+  },
+  {
+    "comparison": "Stacked logistic fusion vs Confidence ensemble",
+    "macro_f1_difference": 0.09659307194518463,
+    "ci_95_low": 0.048740632159518474,
+    "ci_95_high": 0.14692495077577336,
+    "p_value": 0.0,
+    "holm_adjusted_p": 0.0,
+    "significant_after_holm": true
+  },
+  {
+    "comparison": "Supervised-transformer-first escalation vs Confidence ensemble",
+    "macro_f1_difference": 0.09659307194518463,
+    "ci_95_low": 0.04901081819836922,
+    "ci_95_high": 0.14572881545706998,
+    "p_value": 0.0,
+    "holm_adjusted_p": 0.0,
+    "significant_after_holm": true
+  },
+  {
+    "comparison": "Original-prompt router vs Supervised transformer",
+    "macro_f1_difference": -0.041607542050704494,
+    "ci_95_low": -0.08989533000108808,
+    "ci_95_high": 0.005527678958232744,
+    "p_value": 0.067,
+    "holm_adjusted_p": 0.46900000000000003,
+    "significant_after_holm": false
+  },
+  {
+    "comparison": "Router without evidence-verifier rule or retrieved-example metadata vs Supervised transformer",
+    "macro_f1_difference": 0.0,
+    "ci_95_low": 0.0,
+    "ci_95_high": 0.0,
+    "p_value": 1.0,
+    "holm_adjusted_p": 1.0,
+    "significant_after_holm": false
+  }
+]

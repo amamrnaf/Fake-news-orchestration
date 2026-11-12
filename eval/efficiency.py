@@ -24,7 +24,10 @@ class EfficiencyRecord:
         return len(self.tools_invoked)
 
 
-def record_from_outputs(item_id: str, method: str, outputs: List[DetectorOutput], router_llm_calls: int = 0) -> EfficiencyRecord:
+def record_from_outputs(item_id: str, method: str, outputs: List[DetectorOutput], router_llm_calls: int = 0, router_latency_s: float = 0.0) -> EfficiencyRecord:
+    """`router_latency_s` is the routing decision's own time (the language model
+    selection call). Without it a router's cost would count only the tool it
+    picked, which understates the proposed router by the full selection call."""
     llm_tool_ids = {"T2", "T3"}
     return EfficiencyRecord(
         item_id=item_id,
@@ -32,7 +35,7 @@ def record_from_outputs(item_id: str, method: str, outputs: List[DetectorOutput]
         tools_invoked=[o.tool_id for o in outputs],
         llm_calls=router_llm_calls + sum(1 for o in outputs if o.tool_id in llm_tool_ids),
         generated_tokens=sum(o.generated_tokens for o in outputs),
-        latency_s=sum(o.latency_s for o in outputs),
+        latency_s=router_latency_s + sum(o.latency_s for o in outputs),
         peak_vram_mb=max([o.peak_vram_mb for o in outputs], default=0.0),
     )
 

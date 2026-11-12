@@ -31,8 +31,9 @@ from retrieval.index import build_index_for_pool
 from routing.baselines import confidence_weighted_ensemble
 from routing.llm_router import LLMRouter
 from routing.oracle import correct_tools_per_item, outputs_from_decisions
+from utils.cache import cached_map
 from utils.io import write_json
-from utils.types import DomainPrediction
+from utils.types import DomainPrediction, RouterDecision
 
 
 def _one_hot_domain_pred(dp: DomainPrediction) -> DomainPrediction:
@@ -45,21 +46,30 @@ def _gold_domain_pred(gold_domain: str, template: DomainPrediction) -> DomainPre
     return DomainPrediction(distribution=dist, predicted_domain=gold_domain, entropy=0.0, confidence=1.0)
 
 
-def _run_router_config(name, cfg, test_items, gold, registry, catalogue, domain_preds, retrieved, affective_encoder, correct_sets, outputs_by_tool):
+def _run_router_config(name, cache_name, cache_dir, cfg, test_items, gold, registry, catalogue, domain_preds, retrieved, affective_encoder, correct_sets, outputs_by_tool):
+    """`cache_name` makes each configuration resumable per item. Configurations
+    whose router inputs are identical share a cache name (and so cost nothing
+    extra): "Complete framework" is Table 6's proposed router ("router"),
+    "Without retrieved examples" is router variant 3 ("router_no_examples"), and
+    "Hard domain label only" receives exactly the same inputs as "Without
+    domain distribution"."""
     aff_summary = affective_encoder.encode([it.text for it in test_items])
     router = LLMRouter(
         llm=registry.get("T2").llm, tool_descriptions=registry.catalogue_descriptions(),
         validation_catalogue=catalogue, mode=cfg["router"]["mode"],
         max_retries=cfg["router"]["max_retries"], max_new_tokens=cfg["router"]["max_new_tokens"],
     )
-    decisions = [
-        router.select(
+    decisions = cached_map(
+        [it.id for it in test_items],
+        lambda i: router.select(
             test_items[i], domain_preds[i],
             affective_summary={affective_encoder.labels[j]: float(aff_summary[i][j]) for j in range(len(affective_encoder.labels))},
             retrieved_examples=retrieved[i],
-        )
-        for i in range(len(test_items))
-    ]
+        ),
+        lambda d: RouterDecision(**d),
+        cache_path=cache_path_for(cache_dir, cache_name, "test"),
+        label=cache_name,
+    )
     outputs = outputs_from_decisions(decisions, outputs_by_tool)
     y_pred = [o.label for o in outputs]
     y_conf = [d.selection_confidence for d in decisions]
@@ -111,14 +121,21 @@ def main():
     gold_domain_preds = [_gold_domain_pred(test_items[i].domain, domain_preds[i]) for i in range(len(test_items))]
     empty_catalogue = {}
 
+    common = dict(cache_dir=cache_dir, cfg=cfg, test_items=test_items, gold=gold, registry=registry,
+                  affective_encoder=affective_encoder, correct_sets=correct_sets, outputs_by_tool=outputs_by_tool)
+    configs = [
+        # (row name, cache name, catalogue, domain predictions, retrieved examples)
+        ("Complete framework", "router", catalogue, domain_preds, retrieved_full),
+        ("Without affective vector", "router_no_affective", catalogue, domain_preds, retrieved_semantic_only),
+        ("Without retrieved examples", "router_no_examples", catalogue, domain_preds, retrieved_none),
+        ("Without domain distribution", "router_one_hot_domain", catalogue, one_hot_preds, retrieved_full),
+        ("Hard domain label only", "router_one_hot_domain", catalogue, one_hot_preds, retrieved_full),
+        ("No validation catalogue", "router_no_catalogue", empty_catalogue, domain_preds, retrieved_full),
+        ("Gold domain", "router_gold_domain", catalogue, gold_domain_preds, retrieved_full),
+    ]
     rows = [
-        _run_router_config("Complete framework", cfg, test_items, gold, registry, catalogue, domain_preds, retrieved_full, affective_encoder, correct_sets, outputs_by_tool),
-        _run_router_config("Without affective vector", cfg, test_items, gold, registry, catalogue, domain_preds, retrieved_semantic_only, affective_encoder, correct_sets, outputs_by_tool),
-        _run_router_config("Without retrieved examples", cfg, test_items, gold, registry, catalogue, domain_preds, retrieved_none, affective_encoder, correct_sets, outputs_by_tool),
-        _run_router_config("Without domain distribution", cfg, test_items, gold, registry, catalogue, one_hot_preds, retrieved_full, affective_encoder, correct_sets, outputs_by_tool),
-        _run_router_config("Hard domain label only", cfg, test_items, gold, registry, catalogue, one_hot_preds, retrieved_full, affective_encoder, correct_sets, outputs_by_tool),
-        _run_router_config("No validation catalogue", cfg, test_items, gold, registry, empty_catalogue, domain_preds, retrieved_full, affective_encoder, correct_sets, outputs_by_tool),
-        _run_router_config("Gold domain", cfg, test_items, gold, registry, catalogue, gold_domain_preds, retrieved_full, affective_encoder, correct_sets, outputs_by_tool),
+        _run_router_config(name, cache_name, catalogue=cat, domain_preds=dps, retrieved=ret, **common)
+        for name, cache_name, cat, dps, ret in configs
     ]
 
     all_tools_outputs = [

@@ -9,7 +9,9 @@ Usage: python -m experiments.run_leave_one_domain_out --config configs/default.y
 """
 from __future__ import annotations
 
+import json
 import os
+from dataclasses import asdict
 from typing import Dict, List
 
 from data.amtcele import load_amtcele
@@ -22,10 +24,10 @@ from retrieval.index import build_index_for_pool
 from routing.baselines import DomainRuleRouter
 from routing.llm_router import LLMRouter
 from routing.oracle import oracle_select, outputs_from_decisions
-from utils.cache import cached_map
+from utils.cache import cached_map, load_jsonl_cache
 from utils.io import write_json
 from utils.lm_studio import load_llm, unload_llm
-from utils.types import DOMAINS, RouterDecision
+from utils.types import DOMAINS, DomainPrediction, RouterDecision
 
 
 def main():
@@ -59,24 +61,60 @@ def main():
         # Confirmed empirically: unload is near-instant, reload ~5s -- cheap
         # against this fold's LLM-call cost (T2/T3/router), so doing this
         # once per fold (not per training call) keeps overhead negligible.
-        unload_llm(cfg["llm"]["model_name"])
-        registry = build_registry(cfg, train_items, val_items, train_items + val_items, semantic_encoder, affective_encoder, seed)
-
-        dc_cfg = cfg["domain_classifier"]
-        dom_cfg = TrainConfig(
-            model_name=dc_cfg["candidate_encoders"][0], lr=dc_cfg["lr_grid"][0],
-            batch_size=dc_cfg["batch_size_grid"][0], max_length=dc_cfg["max_length_grid"][0], seed=seed,
-        )
-        domain_model, _ = train_one_config(train_items, val_items, dom_cfg)
-        domain_preds = predict_domain_batch(domain_model, [it.text for it in held_out_items])
-        load_llm(cfg["llm"]["model_name"])
-
         # Cache per fold, not shared across folds: T2's retrieval index (and
         # therefore its predictions) genuinely differs fold to fold, so a
         # cached item_id prediction from fold 1 would be wrong reused in
         # fold 2. Safe within a fold, though -- a resumed run of the same
         # fold has the same retrieval index.
         fold_cache_dir = os.path.join(cfg["paths"]["output_dir"], "prediction_cache", f"lodo_{held_out_domain}")
+
+        # Resume shortcut: a fold that was already trained and whose outputs
+        # are all cached does not need its models trained again. T1 is
+        # skipped only when every validation and held-out T1 prediction is
+        # cached; the domain classifier only when its held-out predictions
+        # were saved by an earlier run of this fold.
+        t1_val_cached = load_jsonl_cache(os.path.join(fold_cache_dir, "T1_val_cache.jsonl"))
+        t1_heldout_cached = load_jsonl_cache(os.path.join(fold_cache_dir, "T1_heldout_cache.jsonl"))
+        skip_t1 = all(it.id in t1_val_cached for it in val_items) and all(
+            it.id in t1_heldout_cached for it in held_out_items
+        )
+        domain_preds_path = os.path.join(fold_cache_dir, "domain_preds_heldout.json")
+        domain_preds = None
+        if os.path.exists(domain_preds_path):
+            with open(domain_preds_path, encoding="utf-8") as fh:
+                saved = json.load(fh)
+            if [r["item_id"] for r in saved] == [it.id for it in held_out_items]:
+                domain_preds = [DomainPrediction(**r["prediction"]) for r in saved]
+                print(f"[domain] loaded saved held-out predictions from {domain_preds_path}", flush=True)
+
+        need_training = not skip_t1 or domain_preds is None
+        if need_training:
+            unload_llm(cfg["llm"]["model_name"])
+        registry = build_registry(
+            cfg, train_items, val_items, train_items + val_items, semantic_encoder, affective_encoder, seed,
+            skip_t1_training=skip_t1,
+        )
+
+        if domain_preds is None:
+            dc_cfg = cfg["domain_classifier"]
+            dom_cfg = TrainConfig(
+                model_name=dc_cfg["candidate_encoders"][0], lr=dc_cfg["lr_grid"][0],
+                batch_size=dc_cfg["batch_size_grid"][0], max_length=dc_cfg["max_length_grid"][0], seed=seed,
+            )
+            domain_model, _ = train_one_config(train_items, val_items, dom_cfg)
+            domain_preds = predict_domain_batch(domain_model, [it.text for it in held_out_items])
+            del domain_model
+            os.makedirs(fold_cache_dir, exist_ok=True)
+            with open(domain_preds_path, "w", encoding="utf-8") as fh:
+                json.dump(
+                    [{"item_id": it.id, "prediction": asdict(p)} for it, p in zip(held_out_items, domain_preds)], fh
+                )
+        if need_training:
+            import torch
+
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()  # hand training memory back before the LLM reloads
+            load_llm(cfg["llm"]["model_name"])
 
         catalogue, _ = build_catalogue_for(registry, val_items, cache_dir=fold_cache_dir)
         outputs_by_tool = {

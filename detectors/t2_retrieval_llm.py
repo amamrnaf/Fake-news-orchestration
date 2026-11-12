@@ -86,14 +86,14 @@ class RetrievedExampleLLMDetector:
         if self.mode == "zero_shot" or self.k == 0 or self.index is None:
             return []
         if self.mode == "random":
-            pool = self.index.items
+            pool = [it for it in self.index.items if it.id != item.id]
             n = min(self.k, len(pool))
             chosen = self._rng.sample(pool, n)
             return [RetrievedExample(item=it, score=0.0, sem_score=0.0, aff_score=0.0) for it in chosen]
 
         q_sem = self.semantic_encoder.encode([item.text])[0]
         q_aff = self.affective_encoder.encode([item.text])[0]
-        return self.index.search(q_sem, q_aff, k=self.k, alpha=self.alpha)
+        return self.index.search(q_sem, q_aff, k=self.k, alpha=self.alpha, exclude_ids=[item.id])
 
     def catalogue_entry(self) -> dict:
         return {

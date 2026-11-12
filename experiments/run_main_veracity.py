@@ -18,7 +18,9 @@ from routing.baselines import AllToolLLMAdvisor, DomainRuleRouter, confidence_we
 from routing.llm_router import LLMRouter
 from routing.oracle import oracle_select, outputs_from_decisions
 from detectors.t2_retrieval_llm import RetrievedExampleLLMDetector
+from utils.cache import cached_map
 from utils.io import write_json
+from utils.types import DetectorOutput, RouterDecision
 
 _INDIVIDUAL_DETECTOR_METHODS = (
     "Supervised transformer",
@@ -89,7 +91,11 @@ def main():
             max_new_tokens=cfg["llm"]["max_new_tokens"],
             seed=seed,
         )
-        rows.append(_report_row(row_name, gold, detector.predict_batch(test_items), 1.0))
+        rows.append(_report_row(
+            row_name, gold,
+            detector.predict_batch(test_items, cache_path=cache_path_for(cache_dir, f"T2_{mode}", "test")),
+            1.0,
+        ))
 
     ensemble_outputs = [
         confidence_weighted_ensemble({tid: outputs_by_tool[tid][i] for tid in registry.all_ids()})
@@ -98,10 +104,13 @@ def main():
     rows.append(_report_row("Confidence ensemble", gold, ensemble_outputs, 3.0))
 
     advisor = AllToolLLMAdvisor(llm=registry.get("T2").llm)
-    advisor_outputs = [
-        advisor.synthesise(test_items[i], {tid: outputs_by_tool[tid][i] for tid in registry.all_ids()})
-        for i in range(len(test_items))
-    ]
+    advisor_outputs = cached_map(
+        [it.id for it in test_items],
+        lambda i: advisor.synthesise(test_items[i], {tid: outputs_by_tool[tid][i] for tid in registry.all_ids()}),
+        lambda d: DetectorOutput(**d),
+        cache_path=cache_path_for(cache_dir, "advisor", "test"),
+        label="advisor",
+    )
     rows.append(_report_row("All-tool LLM advisor", gold, advisor_outputs, 3.0))
 
     domain_rule = DomainRuleRouter(catalogue)
@@ -118,15 +127,20 @@ def main():
         max_new_tokens=cfg["router"]["max_new_tokens"],
     )
     affective_summary_all = affective_encoder.encode([it.text for it in test_items])
-    proposed_decisions = [
-        router.select(
+    # Same cache file run_efficiency uses for the identical router configuration.
+    # Move it aside whenever the prompt, catalogue or domain classifier changes.
+    proposed_decisions = cached_map(
+        [it.id for it in test_items],
+        lambda i: router.select(
             test_items[i],
             domain_preds[i],
             affective_summary={affective_encoder.labels[j]: float(affective_summary_all[i][j]) for j in range(len(affective_encoder.labels))},
             retrieved_examples=retrieved[i],
-        )
-        for i in range(len(test_items))
-    ]
+        ),
+        lambda d: RouterDecision(**d),
+        cache_path=cache_path_for(cache_dir, "router", "test"),
+        label="router",
+    )
     proposed_outputs = outputs_from_decisions(proposed_decisions, outputs_by_tool)
     proposed_tools_per_input = sum(1 + d.llm_calls for d in proposed_decisions) / len(proposed_decisions)
     rows.append(_report_row("Proposed router", gold, proposed_outputs, proposed_tools_per_input))
@@ -148,6 +162,22 @@ def main():
     )
     holm = holm_correction({"proposed_vs_strongest_individual": bootstrap.p_value}, alpha=cfg["evaluation"]["holm_alpha"])
 
+    write_json(
+        f"{cfg['paths']['output_dir']}/table6_item_predictions.json",
+        {
+            "item_ids": [it.id for it in test_items],
+            "domains": [it.domain for it in test_items],
+            "gold": gold,
+            "predictions": {
+                r["method"]: {"label": [o.label for o in r["_outputs"]], "prob_fake": [o.prob_fake for o in r["_outputs"]]}
+                for r in rows
+            },
+            "selected_tool": {
+                "Domain-rule router": [d.selected_tool for d in dr_decisions],
+                "Proposed router": [d.selected_tool for d in proposed_decisions],
+            },
+        },
+    )
     for row in rows:
         row.pop("_outputs")
     write_json(f"{cfg['paths']['output_dir']}/table6_main_veracity.json", rows)

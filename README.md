@@ -1,134 +1,135 @@
-# Affective-Aware Cross-Domain Tool Orchestration for Fake-News Detection
+# Fake-News Detector Orchestration with a Local Language Model
 
-Reference implementation of the framework described in *"Can LLM Agents
-Select Better Fake News Detectors? An Empirical Study of Affective-Aware
-Cross-Domain Tool Orchestration"* (Nafir draft v0.1).
+Code, configuration, prompts, protocol and per-item predictions for the paper
+*"Can a Local Language Model Agent Select Better Fake-News Detectors? An
+Empirical Study of Affective-Aware Detector Orchestration"* (Nafir, Youb and
+Hamlich, under review).
 
-**Status: no experiments have been run.** This repository is the empirical
-framework the paper describes (Sections 3-6 and Appendix A), not a report of
-results. Every table script (`experiments/run_*.py`) is fully implemented
-and syntax-checked (`python -m py_compile`), but nothing has been executed
-end-to-end: there is no installed environment, no downloaded checkpoint, and
-no copy of AMTCele/PHEME/COCO in this repo. Filling in the paper's
-bracketed `[ ]` results means actually running these scripts against real
-data and a real LLM backend and reporting what comes out — do not present
-numbers from this codebase as results unless they came from a real run.
+A locally served language model (Qwen3.5-9B through LM Studio) chooses, for
+each news article, one of three detectors:
 
-## Layout and paper mapping
-
-| Module | Paper section | Purpose |
-|---|---|---|
-| `data/` | 4.1 | AMTCele / PHEME / COCO loaders |
-| `data/splits.py` | 4.2 | Near-duplicate detection, group-aware stratified split, leave-one-group-out |
-| `retrieval/` | 3.2 | Semantic + affective encoders, FAISS affective-semantic index |
-| `domain/` | 3.3 | Domain classifier (3 input variants), grid search, batch prediction |
-| `detectors/` | 3.4 | T1 supervised transformer, T2 retrieved-example LLM, T3 evidence verifier, shared LLM backend |
-| `catalogue/` | 3.5 | Validation-only performance catalogue (Table 2) |
-| `routing/` | 3.1, 3.6, Appendix A | Utility router, LLM selector prompt/schema, oracle, baselines |
-| `eval/` | 4.5 | Metrics, paired bootstrap + Holm correction, routing metrics, efficiency logging |
-| `experiments/` | 4-6 | One script per results table |
-| `configs/default.yaml` | 4.4 | All hyperparameters/paths in one place |
-
-### Experiment scripts → tables
-
-| Script | Table(s) |
+| Identifier in the code | Detector |
 |---|---|
-| `experiments/run_catalogue.py` | Table 2 (validation catalogue) |
-| `experiments/run_domain_classification.py` | Table 5 (domain classifier) |
-| `experiments/run_main_veracity.py` | Table 6 (main results) + RQ1 significance test |
-| `experiments/run_leave_one_domain_out.py` | Table 7 (LODO transfer) |
-| `experiments/run_routing_analysis.py` | Table 8 (routing quality + selection confusion matrix) |
-| `experiments/run_transfer_pheme_coco.py` | Table 9 (PHEME / COCO transfer) |
-| `experiments/run_ablations.py` | Table 10 (ablations) |
-| `experiments/run_efficiency.py` | Table 11 (efficiency) + lambda sweep |
+| `T1` | Supervised transformer: fine-tuned RoBERTa-base classifier |
+| `T2` | Retrieval-augmented language model: the same local model, prompted with labelled examples chosen by affective-semantic similarity |
+| `T3` | Evidence verifier: the local model judging the claim against BM25-retrieved Wikipedia passages |
+
+The router sees the predicted domain distribution, an emotion profile of the
+article, metadata about retrieved labelled examples and a validation-only
+performance catalogue. It is compared with single detectors, a domain-rule
+router, ensembles, learned fusion (stacking, escalation), an all-tool language
+model advisor and an oracle, with paired bootstrap confidence intervals and
+Holm correction over a comparison family fixed in advance.
+
+## Main findings
+
+- With an honest validation catalogue, the router selects the supervised
+  transformer for 144 of 145 test articles and matches it exactly (macro F1
+  0.931) at about 53 times its cost per article. The oracle reaches 0.972.
+- The validation catalogue is the only input the router relies on: removing
+  it costs 9 points, while removing the emotion profile, the retrieved
+  examples or the domain distribution changes nothing.
+- When a whole domain is unseen (leave-one-domain-out), both routers fall
+  below always using the supervised transformer (0.870 and 0.875 against
+  0.898). On held-out celebrity articles the supervised transformer drops to
+  0.527 while the retrieval-augmented detector keeps 0.776, yet the router keeps
+  the supervised transformer for all 500 articles.
+- Affective example retrieval beats semantic retrieval for the
+  retrieval-augmented detector (+0.111 macro F1, 95% confidence interval
+  [+0.037, +0.186]).
+- Letting validation items retrieve themselves inflated one detector's
+  validation score from 0.755 to 0.939 and reversed the routing catalogue. The
+  fix and its effect are documented in `PROTOCOL.md`.
+
+## Repository layout
+
+| Folder | Contents |
+|---|---|
+| `data/` | AMTCele loader, near-duplicate-aware stratified split, leave-one-domain-out split (PHEME and COCO loaders are included but unused in the paper) |
+| `retrieval/` | Semantic and affective encoders and the affective-semantic index |
+| `domain/` | Domain classifier: training, grid search and prediction |
+| `detectors/` | The three detectors and the shared language model client |
+| `perf_catalogue/` | Validation performance catalogue |
+| `routing/` | Language model router and its prompt (`selector_prompt.py`), domain-rule router, oracle and other baselines |
+| `eval/` | Metrics, paired bootstrap with Holm correction, routing and cost measurement |
+| `experiments/` | One script per result (see below) |
+| `configs/` | All hyperparameters and paths |
+| `results/` | Result tables (JSON) and per-item predictions for every experiment, in `results/prediction_cache/` |
+| `PROTOCOL.md` | Frozen evaluation protocol, known-issues log and deviation log |
+
+## Experiments
+
+| Script | Result |
+|---|---|
+| `experiments/run_catalogue.py` | Validation performance catalogue |
+| `experiments/run_domain_classification.py` | Domain classifier comparison |
+| `experiments/run_main_veracity.py` | Main veracity results (single detectors, combinations, routers, oracle) |
+| `experiments/run_fusion.py` | Learned fusion: performance-weighted fusion, stacking, escalation |
+| `experiments/run_router_variants.py` | The three prompt variants of the router, selected on validation |
+| `experiments/run_routing_analysis.py` | Routing quality and selection confusion matrix |
+| `experiments/run_ablations.py` | Router input ablations |
+| `experiments/run_efficiency.py` | Cost per article |
+| `experiments/run_leave_one_domain_out.py` | Leave-one-domain-out evaluation |
+| `experiments/run_significance.py` | Paired bootstrap tests with Holm correction over the full comparison family |
+
+Every script takes `--config` (default experiments use `configs/default.yaml`)
+and an optional `--seed` (default 13), and writes its output to `results/`.
+`scripts/run_remaining.cmd` shows the order used on Windows.
+
+All language model and detector predictions are cached per item, write-through,
+in `results/prediction_cache/`. Rerunning any script with these caches in place
+reproduces the reported numbers without calling the language model again;
+delete a cache file to recompute it.
 
 ## Installation
+
+Tested with Python 3.13.
 
 ```bash
 pip install -r requirements.txt
 python -m spacy download en_core_web_sm
 ```
 
-`requirements.txt` marks `bitsandbytes` as non-Windows-only (4-bit local
-inference needs a Linux/CUDA host); on Windows, either run under WSL2 or set
-`llm.backend: "api"` in the config to use an OpenAI-compatible endpoint
-instead of a local quantized checkpoint.
+### Language model
 
-## Required data and checkpoints (none are included)
+The paper uses `qwen/qwen3.5-9b` served by [LM Studio](https://lmstudio.ai)
+through its OpenAI-compatible server at `http://127.0.0.1:1234/v1`, with
+temperature 0. Load the model in LM Studio (or run `lms load qwen/qwen3.5-9b`)
+before running any script that calls the language model. Any other
+OpenAI-compatible server works by editing the `llm:` section of the config.
+Use the `qwen/`-prefixed model identifier: it is the variant with reasoning
+output disabled.
 
-- **AMTCele** — set `paths.amtcele_raw` to either a directory of
-  `<domain>/{Fake,Legit}/*.txt` files (one article per file, domain names
-  matching `utils/types.DOMAINS`) or a manifest CSV (see
-  `data/amtcele.py` for accepted column names).
-- **PHEME** — set `paths.pheme_raw` to the root of the standard
-  `pheme-rnr-dataset` layout: `<event>/{rumours,non-rumours}/<thread_id>/source-tweet/*.json`.
-  Used only as a secondary transfer benchmark (Table 9); the loader is
-  skipped gracefully (with a `[skip]` message) if the directory is absent.
-- **COCO** — set `paths.coco_csv` to a CSV with text/topic/stance/id
-  columns (see `data/coco.py` for exact column names and the
-  conspiracy/unrelated stance mapping). Also optional/skippable.
-- **Evidence corpus for T3** — set `paths.evidence_corpus` to a JSONL file
-  of `{"doc_id": ..., "text": ...}` passages that `T3`'s BM25 index is built
-  over.
-- **LLM backend** — edit `llm:` in `configs/default.yaml`:
-  - `backend: "local"` loads `llm.model_name` via `transformers` with 4-bit
-    quantization (`BitsAndBytesConfig`). Replace the placeholder
-    `REPLACE_WITH_EXACT_CHECKPOINT_AFTER_PILOT` with an actual 7-8B instruct
-    checkpoint you have access to, after running the pilot referenced in
-    Sec 4.4.
-  - `backend: "api"` calls an OpenAI-compatible endpoint instead
-    (see `detectors/llm_backend.py::APIBackend`); requires the relevant API
-    key/base URL to be available in the environment.
+### Data (not included)
 
-None of these paths exist in this repo — every `run_*.py` script will fail
-immediately at data loading until you supply them.
+AMTCele combines the FakeNewsAMT and Celebrity datasets of Pérez-Rosas et
+al., "Automatic Detection of Fake News", COLING 2018. Request them from the
+authors (University of Michigan, Language and Information Technologies group)
+and place them as:
 
-## Running
-
-Each script is a module and takes a `--config` path and optional `--seed`
-override (defaults to `cfg["seeds"][0]`, i.e. 13):
-
-```bash
-python -m experiments.run_catalogue --config configs/default.yaml
-python -m experiments.run_domain_classification --config configs/default.yaml
-python -m experiments.run_main_veracity --config configs/default.yaml
-python -m experiments.run_leave_one_domain_out --config configs/default.yaml
-python -m experiments.run_routing_analysis --config configs/default.yaml
-python -m experiments.run_transfer_pheme_coco --config configs/default.yaml
-python -m experiments.run_ablations --config configs/default.yaml
-python -m experiments.run_efficiency --config configs/default.yaml
+```
+data_raw/amtcele/fakeNewsDataset/{fake,legit}/<domain><number>.{fake,legit}.txt
+data_raw/amtcele/celebrityDataset/{fake,legit}/*.txt
 ```
 
-For the seed-robustness claim in Sec 4.4, rerun the seed-sensitive scripts
-(`run_domain_classification`, `run_main_veracity`, `run_leave_one_domain_out`)
-once per entry in `cfg["seeds"]` (`--seed 13`, `--seed 42`, `--seed 2024`) and
-aggregate across runs yourself — the scripts each report a single seed per
-invocation.
+The evidence verifier's Wikipedia corpus is built with
+`python scripts/build_evidence_corpus.py` (see the script for options);
+`data_raw/evidence_corpus.example.jsonl` shows the format.
 
-All scripts write their table's JSON output to `paths.output_dir`
-(`results/` by default) and print a human-readable summary to stdout.
+### Hardware
 
-## Validation performed so far
+Results in the paper were produced on a laptop with an 8 GB NVIDIA RTX 4070
+graphics card. The language model needs about 6.5 GB of graphics memory, so
+the scripts unload it from LM Studio while transformer models train and reload
+it afterwards (`utils/lm_studio.py`). Trained checkpoints are not included;
+they are retrained when missing.
 
-- Every cross-module import was manually cross-referenced against the
-  defining module's actual signatures (no dependency-installed runtime
-  check was possible in the sandbox this was built in — no `pip` was
-  available).
-- `python -m py_compile` passes with no errors across the entire package.
-- No script has been executed against real data, a real model, or a GPU.
-  Treat this as unvalidated at runtime until you run it yourself.
+## Citation
 
-## Known simplifications vs. the paper text
+If you use this code, please cite the paper (citation details will be added
+on publication).
 
-- The affective-semantic similarity `S(x,z) = α·cos_sem + (1-α)·cos_aff` is
-  implemented via a FAISS `IndexFlatIP` over weighted-concatenated semantic
-  and affective vectors (mathematically equivalent to the paper's
-  definition, not a literal two-index fusion).
-- T3's evidence verifier abstains (label=0, `prob_fake=0.5`, `failed=True`)
-  on any item with no retrieved evidence passages, per the fidelity note in
-  Sec 7.3.
-- The LLM router's `select()` retries up to `router.max_retries` times on
-  schema-invalid output before falling back to the validation catalogue's
-  `best_validation_tool` for the predicted domain — this fallback path is
-  not separately reported as a metric anywhere; if you want a "fallback
-  rate" number for the paper you'll need to add logging for it.
+## Licence
+
+Code released for research use. The AMTCele data belong to their original
+authors and are subject to their terms.

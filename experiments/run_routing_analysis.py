@@ -19,8 +19,9 @@ from retrieval.index import build_index_for_pool
 from routing.baselines import DomainRuleRouter, RandomRouter
 from routing.llm_router import LLMRouter
 from routing.oracle import correct_tools_per_item, oracle_select, outputs_from_decisions
+from utils.cache import cached_map
 from utils.io import write_json
-from utils.types import TOOL_IDS
+from utils.types import TOOL_IDS, RouterDecision
 
 
 def _route_and_score(name, decisions, outputs_by_tool, test_items, gold, oracle_f1, correct_sets):
@@ -85,28 +86,32 @@ def main():
         validation_catalogue=catalogue, mode="domain_catalogue",
         max_retries=cfg["router"]["max_retries"], max_new_tokens=cfg["router"]["max_new_tokens"],
     )
-    llm_domain_decisions = [
-        llm_domain_only.select(
-            test_items[i], domain_preds[i],
-            affective_summary={affective_encoder.labels[j]: float(aff_summary[i][j]) for j in range(len(affective_encoder.labels))},
-            retrieved_examples=retrieved[i], router_name="llm_domain_only",
-        )
-        for i in range(len(test_items))
-    ]
+    def _aff(i):
+        return {affective_encoder.labels[j]: float(aff_summary[i][j]) for j in range(len(affective_encoder.labels))}
+
+    llm_domain_decisions = cached_map(
+        [it.id for it in test_items],
+        lambda i: llm_domain_only.select(test_items[i], domain_preds[i], affective_summary=_aff(i), retrieved_examples=retrieved[i], router_name="llm_domain_only"),
+        lambda d: RouterDecision(**d),
+        cache_path=cache_path_for(cache_dir, "router_domain_only", "test"),
+        label="router_domain_only",
+    )
 
     llm_full_context = LLMRouter(
         llm=registry.get("T2").llm, tool_descriptions=registry.catalogue_descriptions(),
         validation_catalogue=catalogue, mode="instance_aware",
         max_retries=cfg["router"]["max_retries"], max_new_tokens=cfg["router"]["max_new_tokens"],
     )
-    llm_full_decisions = [
-        llm_full_context.select(
-            test_items[i], domain_preds[i],
-            affective_summary={affective_encoder.labels[j]: float(aff_summary[i][j]) for j in range(len(affective_encoder.labels))},
-            retrieved_examples=retrieved[i], router_name="llm_full_context",
-        )
-        for i in range(len(test_items))
-    ]
+    # Identical configuration to Table 6's proposed router (config mode is
+    # "instance_aware"), so it shares that cache instead of re-calling the model.
+    assert cfg["router"]["mode"] == "instance_aware"
+    llm_full_decisions = cached_map(
+        [it.id for it in test_items],
+        lambda i: llm_full_context.select(test_items[i], domain_preds[i], affective_summary=_aff(i), retrieved_examples=retrieved[i], router_name="llm_full_context"),
+        lambda d: RouterDecision(**d),
+        cache_path=cache_path_for(cache_dir, "router", "test"),
+        label="router",
+    )
 
     rows = [
         _route_and_score("Random", random_decisions, outputs_by_tool, test_items, gold, oracle_f1, correct_sets),

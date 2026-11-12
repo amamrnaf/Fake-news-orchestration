@@ -20,7 +20,7 @@ from detectors.t1_supervised import SupervisedTransformerDetector, T1Config
 from detectors.t2_retrieval_llm import RetrievedExampleLLMDetector
 from detectors.t3_evidence_verifier import EvidenceCorpus, EvidenceGroundedVerifier, EvidencePassage
 from domain.model import DomainClassifierModel
-from domain.train import TrainConfig, train_one_config
+from domain.train import TrainConfig, load_domain_classifier_checkpoint, train_one_config
 from retrieval.embeddings import AffectiveEncoder, SemanticEncoder
 from retrieval.index import build_index_for_pool
 from utils.io import load_yaml, read_jsonl
@@ -73,27 +73,52 @@ def build_routing_domain_classifier(
     seed: int,
     checkpoint_key: Optional[str] = None,
 ) -> DomainClassifierModel:
-    """The lightweight, single-config domain classifier used by
-    run_main_veracity/run_ablations/run_routing_analysis/run_efficiency purely
-    as routing context (NOT the full 3-encoder x 12-config grid search from
-    run_domain_classification.py / Table 5 -- that one's result is never reused
-    elsewhere in the pipeline). Always trains `candidate_encoders[0]` with the
-    first value of each hyperparameter grid.
+    """The domain classifier used by run_main_veracity/run_ablations/
+    run_routing_analysis/run_efficiency purely as routing context.
 
-    `checkpoint_key` (e.g. f"seed{seed}") opts into caching under
-    cfg["paths"]["quick_domain_classifier_checkpoint_dir"], the same pattern as
-    `build_registry`'s `t1_checkpoint_key`. Leave None for
-    run_leave_one_domain_out, which uses a different split per fold."""
+    Prefers Table 5's fully grid-searched checkpoint for `candidate_encoders[0]`
+    (cfg["paths"]["domain_classifier_checkpoint_dir"]) when one is available,
+    rather than training a fresh single-config classifier from the first value
+    of each hyperparameter grid. Measured gap on the seed-13 test split: the
+    single-config version scored macro_f1=0.904 vs. 0.963 for the tuned
+    checkpoint (same encoder, properly searched lr/batch_size/max_length) --
+    and both routers key their decision directly on this classifier's output
+    (DomainRuleRouter's catalogue lookup, LLMRouter's catalogue slice +
+    entropy/distribution), so that gap was propagating straight into routing
+    quality rather than staying a training-quality footnote. Falls back to
+    training the original single-config classifier if the tuned checkpoint
+    isn't available yet (e.g. Table 5 hasn't been run).
+
+    `checkpoint_key` (e.g. f"seed{seed}") opts into caching the *fallback*
+    path under cfg["paths"]["quick_domain_classifier_checkpoint_dir"], the same
+    pattern as `build_registry`'s `t1_checkpoint_key`. Leave None for
+    run_leave_one_domain_out, which uses a different split per fold and can't
+    reuse Table 5's checkpoint anyway -- it never saw the held-out domain
+    during training, tuned or not (see Table 7's root-cause note: this is a
+    closed-set-classifier limitation, not a training-quality one)."""
+    encoder_name = cfg["domain_classifier"]["candidate_encoders"][0]
+    tuned_dir = cfg["paths"].get("domain_classifier_checkpoint_dir")
+    if tuned_dir:
+        cached = load_domain_classifier_checkpoint(tuned_dir, encoder_name)
+        if cached is not None:
+            model, _, val_f1 = cached
+            print(
+                f"[domain classifier] loaded Table 5's tuned checkpoint for {encoder_name} "
+                f"(val_f1={val_f1:.3f}) from {tuned_dir}, skipping training",
+                flush=True,
+            )
+            return model
+
     checkpoint_dir = cfg["paths"].get("quick_domain_classifier_checkpoint_dir")
     checkpoint_path = os.path.join(checkpoint_dir, checkpoint_key) if checkpoint_dir and checkpoint_key else None
 
     if checkpoint_path and os.path.exists(os.path.join(checkpoint_path, "wrapper_meta.json")):
-        print(f"[domain classifier] loaded cached checkpoint from {checkpoint_path}, skipping training", flush=True)
+        print(f"[domain classifier] loaded cached quick-classifier checkpoint from {checkpoint_path}, skipping training", flush=True)
         return DomainClassifierModel.load(checkpoint_path)
 
     dc_cfg = cfg["domain_classifier"]
     dom_cfg = TrainConfig(
-        model_name=dc_cfg["candidate_encoders"][0],
+        model_name=encoder_name,
         lr=dc_cfg["lr_grid"][0],
         batch_size=dc_cfg["batch_size_grid"][0],
         max_length=dc_cfg["max_length_grid"][0],
@@ -102,7 +127,7 @@ def build_routing_domain_classifier(
     domain_model, _ = train_one_config(train_items, val_items, dom_cfg)
     if checkpoint_path:
         domain_model.save(checkpoint_path)
-        print(f"[domain classifier] saved checkpoint to {checkpoint_path}", flush=True)
+        print(f"[domain classifier] saved quick-classifier checkpoint to {checkpoint_path}", flush=True)
     return domain_model
 
 
@@ -115,6 +140,7 @@ def build_registry(
     affective_encoder,
     seed: int,
     t1_checkpoint_key: Optional[str] = None,
+    skip_t1_training: bool = False,
 ) -> DetectorRegistry:
     """Trains T1, and wires T2/T3 to a shared LLM backend + retrieval index
     built only from `retrieval_pool` (must exclude the target/held-out
@@ -134,7 +160,17 @@ def build_registry(
         if t1_checkpoint_dir and t1_checkpoint_key
         else None
     )
-    if checkpoint_path and SupervisedTransformerDetector.has_checkpoint(checkpoint_path):
+    if skip_t1_training:
+        # Caller guarantees every T1 prediction it needs is already in the
+        # prediction cache, so the model is never called (see LODO resume).
+        print("[T1] every needed prediction is cached, skipping training", flush=True)
+        t1 = SupervisedTransformerDetector(T1Config(**{**cfg["t1_supervised"], "seed": seed}))
+
+        def _refuse(item):
+            raise RuntimeError(f"T1 training was skipped but item {item.id} is not cached")
+
+        t1.predict = _refuse
+    elif checkpoint_path and SupervisedTransformerDetector.has_checkpoint(checkpoint_path):
         print(f"[T1] loaded cached checkpoint from {checkpoint_path}, skipping training", flush=True)
         t1 = SupervisedTransformerDetector.load(checkpoint_path)
     else:

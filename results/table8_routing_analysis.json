@@ -1,0 +1,50 @@
+[
+  {
+    "router": "Random",
+    "selection_accuracy": 0.7931034482758621,
+    "oracle_gap": 0.18095402487807544,
+    "mean_regret": 0.1793103448275862,
+    "llm_calls": 0.0,
+    "tool_distribution": {
+      "T1": 0.30344827586206896,
+      "T2": 0.31724137931034485,
+      "T3": 0.3793103448275862
+    }
+  },
+  {
+    "router": "Domain rule",
+    "selection_accuracy": 0.9310344827586207,
+    "oracle_gap": 0.041376003770369874,
+    "mean_regret": 0.041379310344827586,
+    "llm_calls": 0.0,
+    "tool_distribution": {
+      "T1": 1.0,
+      "T2": 0.0,
+      "T3": 0.0
+    }
+  },
+  {
+    "router": "LLM, domain only",
+    "selection_accuracy": 0.9310344827586207,
+    "oracle_gap": 0.041376003770369874,
+    "mean_regret": 0.041379310344827586,
+    "llm_calls": 1.0,
+    "tool_distribution": {
+      "T1": 1.0,
+      "T2": 0.0,
+      "T3": 0.0
+    }
+  },
+  {
+    "router": "LLM, full context",
+    "selection_accuracy": 0.9310344827586207,
+    "oracle_gap": 0.041376003770369874,
+    "mean_regret": 0.041379310344827586,
+    "llm_calls": 1.0,
+    "tool_distribution": {
+      "T1": 0.993103448275862,
+      "T2": 0.0,
+      "T3": 0.006896551724137931
+    }
+  }
+]

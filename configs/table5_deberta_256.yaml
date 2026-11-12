@@ -1,0 +1,85 @@
+﻿# Default configuration. Copy and edit per experiment; every experiments/run_*.py
+# script accepts --config path/to/your.yaml.
+
+seeds: [13, 42, 2024]        # Sec 4.4: "at least three random seeds for trained components"
+bootstrap_samples: 10000     # Sec 4.5
+
+paths:
+  amtcele_raw: "data_raw/amtcele"          # <domain>/{Fake,Legit}/*.txt, or a manifest.csv
+  pheme_raw: "data_raw/pheme-rnr-dataset"  # <event>/{rumours,non-rumours}/<thread>/source-tweet/*.json
+  coco_csv: "data_raw/coco/coco_tweets.csv"
+  evidence_corpus: "data_raw/evidence_corpus.jsonl"  # [{"doc_id": ..., "text": ...}, ...] for T3
+  output_dir: "results"
+  # All optional. If set and populated (e.g. copied back from the Colab
+  # notebook in colab/train_on_colab.ipynb), T1 and the domain classifier(s)
+  # are loaded from here instead of retrained locally. Leave unset/empty to
+  # always train locally (original behaviour, nothing else changes).
+  t1_checkpoint_dir: "checkpoints/t1"
+  domain_classifier_checkpoint_dir: "checkpoints/domain_classifier"          # Table 5's full grid search, per encoder
+  quick_domain_classifier_checkpoint_dir: "checkpoints/quick_domain_classifier"  # single-config classifier used for routing in Tables 6/8/10/11
+
+splits:
+  train_size: 0.7
+  val_size: 0.15
+  test_size: 0.15
+  near_duplicate_similarity_threshold: 0.95
+
+retrieval:
+  semantic_encoder: "sentence-transformers/all-mpnet-base-v2"
+  affective_encoder: "j-hartmann/emotion-english-distilroberta-base"
+  k_grid: [2, 4, 6, 8]
+  alpha_grid: [0.0, 0.25, 0.5, 0.75, 1.0]
+  # Chosen on validation data (Sec 4.4); fill in after tuning.
+  k: 4
+  alpha: 0.5
+
+domain_classifier:
+  candidate_encoders:
+    - "roberta-base"
+    - "microsoft/deberta-v3-base"
+    - "xlm-roberta-base"  # re-added: the OOM was a real leak in grid_search_domain_classifier, now fixed
+  lr_grid: [0.00001, 0.00002, 0.00003]
+  batch_size_grid: [8, 16]
+  max_length_grid: [256]  # Table 5 DeBERTa rerun only: 512 does not fit in 8 GB (see PROTOCOL.md)
+  epochs: 10
+  patience: 3
+
+t1_supervised:
+  model_name: "roberta-base"
+  lr: 0.00002
+  batch_size: 16
+  max_length: 256
+  epochs: 10
+  patience: 3
+
+llm:
+  # LM Studio local server (OpenAI-compatible), model already loaded there.
+  backend: "api"
+  # IMPORTANT: "qwen3.5-9b" (no prefix) and "qwen/qwen3.5-9b" are two separate
+  # LM Studio model IDs for what looks like the same underlying checkpoint --
+  # only the "qwen/" one actually has thinking disabled. The unprefixed one
+  # silently ignored every attempt to turn reasoning off (reasoning: "off",
+  # chat_template_kwargs.enable_thinking: false, GUI toggles) and burned
+  # ~190 reasoning tokens even on trivial prompts, occasionally exhausting
+  # max_new_tokens before emitting any real answer (finish_reason="length",
+  # content=""). Verified "qwen/qwen3.5-9b" answers directly in ~1.6s with
+  # reasoning_content empty. Do not swap back to the unprefixed id.
+  model_name: "qwen/qwen3.5-9b"
+  base_url: "http://127.0.0.1:1234/v1"
+  api_key: "lm-studio"  # LM Studio ignores the key's value but the client requires one
+  max_input_tokens: 4096
+  max_new_tokens: 300
+
+t3_evidence_verifier:
+  bm25_k: 5
+  min_score: 0.0
+
+router:
+  mode: "instance_aware"   # "domain_catalogue" | "instance_aware"
+  max_retries: 2
+  max_new_tokens: 250
+  lambda_grid: [0.0, 0.25, 0.5, 0.75, 1.0]  # secondary efficiency experiment (Sec 3.1)
+
+evaluation:
+  ece_bins: 10
+  holm_alpha: 0.05

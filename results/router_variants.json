@@ -1,0 +1,194 @@
+{
+  "selected_on_validation": "Router without evidence-verifier rule",
+  "validation": [
+    {
+      "variant": "Original-prompt router",
+      "accuracy": 0.8163265306122449,
+      "macro_f1": 0.8157809236481782,
+      "weighted_f1": 0.8158491245186866,
+      "per_class": {
+        "0": {
+          "precision": 0.7901234567901234,
+          "recall": 0.8648648648648649,
+          "f1": 0.8258064516129032,
+          "support": 74
+        },
+        "1": {
+          "precision": 0.8484848484848485,
+          "recall": 0.7671232876712328,
+          "f1": 0.8057553956834532,
+          "support": 73
+        }
+      },
+      "auroc": 0.8902258422806368,
+      "brier": 0.15444276485892686,
+      "ece": 0.1279440908851165,
+      "routing_accuracy": 0.8163265306122449,
+      "tool_distribution": {
+        "T1": 83,
+        "T2": 0,
+        "T3": 64
+      },
+      "fallbacks": 0,
+      "mean_router_seconds": 7.171781146938066
+    },
+    {
+      "variant": "Router without evidence-verifier rule",
+      "accuracy": 0.8707482993197279,
+      "macro_f1": 0.8707243693589446,
+      "weighted_f1": 0.8707363343393362,
+      "per_class": {
+        "0": {
+          "precision": 0.8666666666666667,
+          "recall": 0.8783783783783784,
+          "f1": 0.87248322147651,
+          "support": 74
+        },
+        "1": {
+          "precision": 0.875,
+          "recall": 0.863013698630137,
+          "f1": 0.8689655172413793,
+          "support": 73
+        }
+      },
+      "auroc": 0.9361347649018882,
+      "brier": 0.10817007505425015,
+      "ece": 0.07870625759329211,
+      "routing_accuracy": 0.8707482993197279,
+      "tool_distribution": {
+        "T1": 147,
+        "T2": 0,
+        "T3": 0
+      },
+      "fallbacks": 0,
+      "mean_router_seconds": 7.079041846258072
+    },
+    {
+      "variant": "Router without evidence-verifier rule or retrieved-example metadata",
+      "accuracy": 0.8707482993197279,
+      "macro_f1": 0.8707243693589446,
+      "weighted_f1": 0.8707363343393362,
+      "per_class": {
+        "0": {
+          "precision": 0.8666666666666667,
+          "recall": 0.8783783783783784,
+          "f1": 0.87248322147651,
+          "support": 74
+        },
+        "1": {
+          "precision": 0.875,
+          "recall": 0.863013698630137,
+          "f1": 0.8689655172413793,
+          "support": 73
+        }
+      },
+      "auroc": 0.9361347649018882,
+      "brier": 0.10817007505425015,
+      "ece": 0.07870625759329211,
+      "routing_accuracy": 0.8707482993197279,
+      "tool_distribution": {
+        "T1": 147,
+        "T2": 0,
+        "T3": 0
+      },
+      "fallbacks": 0,
+      "mean_router_seconds": 6.828736383673719
+    }
+  ],
+  "test": [
+    {
+      "variant": "Original-prompt router",
+      "accuracy": 0.8896551724137931,
+      "macro_f1": 0.889397406559878,
+      "weighted_f1": 0.8895078776401274,
+      "per_class": {
+        "0": {
+          "precision": 0.9104477611940298,
+          "recall": 0.8591549295774648,
+          "f1": 0.8840579710144928,
+          "support": 71
+        },
+        "1": {
+          "precision": 0.8717948717948718,
+          "recall": 0.918918918918919,
+          "f1": 0.8947368421052632,
+          "support": 74
+        }
+      },
+      "auroc": 0.9371907118385991,
+      "brier": 0.0998601259806588,
+      "ece": 0.08348445865068725,
+      "routing_accuracy": 0.8896551724137931,
+      "tool_distribution": {
+        "T1": 93,
+        "T2": 0,
+        "T3": 52
+      },
+      "fallbacks": 0,
+      "mean_router_seconds": 7.15429800551772
+    },
+    {
+      "variant": "Router without evidence-verifier rule",
+      "accuracy": 0.9310344827586207,
+      "macro_f1": 0.9310049486105825,
+      "weighted_f1": 0.9310344827586207,
+      "per_class": {
+        "0": {
+          "precision": 0.9295774647887324,
+          "recall": 0.9295774647887324,
+          "f1": 0.9295774647887324,
+          "support": 71
+        },
+        "1": {
+          "precision": 0.9324324324324325,
+          "recall": 0.9324324324324325,
+          "f1": 0.9324324324324325,
+          "support": 74
+        }
+      },
+      "auroc": 0.9775409212028929,
+      "brier": 0.05652602870106172,
+      "ece": 0.03582191439217024,
+      "routing_accuracy": 0.9310344827586207,
+      "tool_distribution": {
+        "T1": 144,
+        "T2": 0,
+        "T3": 1
+      },
+      "fallbacks": 0,
+      "mean_router_seconds": 6.1756029937928645
+    },
+    {
+      "variant": "Router without evidence-verifier rule or retrieved-example metadata",
+      "accuracy": 0.9310344827586207,
+      "macro_f1": 0.9310049486105825,
+      "weighted_f1": 0.9310344827586207,
+      "per_class": {
+        "0": {
+          "precision": 0.9295774647887324,
+          "recall": 0.9295774647887324,
+          "f1": 0.9295774647887324,
+          "support": 71
+        },
+        "1": {
+          "precision": 0.9324324324324325,
+          "recall": 0.9324324324324325,
+          "f1": 0.9324324324324325,
+          "support": 74
+        }
+      },
+      "auroc": 0.9777312523791396,
+      "brier": 0.05650986738335638,
+      "ece": 0.036080436122700045,
+      "routing_accuracy": 0.9310344827586207,
+      "tool_distribution": {
+        "T1": 145,
+        "T2": 0,
+        "T3": 0
+      },
+      "fallbacks": 0,
+      "mean_router_seconds": 7.102959177241328
+    }
+  ],
+  "note": "Validation routing uses the catalogue computed on the same validation items; it is used only to compare variants."
+}

@@ -1,0 +1,58 @@
+[
+  {
+    "held_out_domain": "technology",
+    "best_single_tool": 0.9499687304565353,
+    "domain_rule_router": 0.9499687304565353,
+    "proposed_router": 0.9499687304565353,
+    "oracle": 1.0
+  },
+  {
+    "held_out_domain": "education",
+    "best_single_tool": 0.9749843652282677,
+    "domain_rule_router": 0.8354169963601836,
+    "proposed_router": 0.8354169963601836,
+    "oracle": 1.0
+  },
+  {
+    "held_out_domain": "business",
+    "best_single_tool": 0.9372549019607843,
+    "domain_rule_router": 0.898989898989899,
+    "proposed_router": 0.9118249094630766,
+    "oracle": 0.9874980465697765
+  },
+  {
+    "held_out_domain": "sports",
+    "best_single_tool": 1.0,
+    "domain_rule_router": 1.0,
+    "proposed_router": 1.0,
+    "oracle": 1.0
+  },
+  {
+    "held_out_domain": "politics",
+    "best_single_tool": 0.9499687304565353,
+    "domain_rule_router": 0.9624471913628541,
+    "proposed_router": 0.924812030075188,
+    "oracle": 0.9874980465697765
+  },
+  {
+    "held_out_domain": "entertainment",
+    "best_single_tool": 0.95,
+    "domain_rule_router": 0.95,
+    "proposed_router": 0.9374902328488826,
+    "oracle": 0.9874980465697765
+  },
+  {
+    "held_out_domain": "celebrity",
+    "best_single_tool": 0.7759964159426551,
+    "domain_rule_router": 0.5271428823955737,
+    "proposed_router": 0.5271428823955737,
+    "oracle": 0.9419161268872251
+  },
+  {
+    "held_out_domain": "Macro-average",
+    "best_single_tool": 0.9340247348635397,
+    "domain_rule_router": 0.8748522427950066,
+    "proposed_router": 0.8695222545142057,
+    "oracle": 0.9863443237995079
+  }
+]

@@ -16,7 +16,9 @@ from routing.llm_router import LLMRouter
 from routing.oracle import outputs_from_decisions
 from routing.utility_router import lambda_sweep
 from retrieval.index import build_index_for_pool
+from utils.cache import cached_map
 from utils.io import write_json
+from utils.types import DetectorOutput, RouterDecision
 
 
 def main():
@@ -52,10 +54,17 @@ def main():
     aff_summary = affective_encoder.encode([it.text for it in test_items])
 
     advisor = AllToolLLMAdvisor(llm=registry.get("T2").llm)
-    advisor_outputs = [
-        advisor.synthesise(test_items[i], {tid: outputs_by_tool[tid][i] for tid in registry.all_ids()})
-        for i in range(len(test_items))
-    ]
+
+    def _advise(i: int) -> DetectorOutput:
+        return advisor.synthesise(test_items[i], {tid: outputs_by_tool[tid][i] for tid in registry.all_ids()})
+
+    advisor_outputs = cached_map(
+        [it.id for it in test_items],
+        _advise,
+        lambda d: DetectorOutput(**d),
+        cache_path=cache_path_for(cache_dir, "advisor", "test"),
+        label="advisor",
+    )
     advisor_records = [
         record_from_outputs(test_items[i].id, "advisor", [outputs_by_tool[tid][i] for tid in registry.all_ids()] + [advisor_outputs[i]])
         for i in range(len(test_items))
@@ -66,17 +75,23 @@ def main():
         validation_catalogue=catalogue, mode=cfg["router"]["mode"],
         max_retries=cfg["router"]["max_retries"], max_new_tokens=cfg["router"]["max_new_tokens"],
     )
-    proposed_decisions = [
-        router.select(
+    def _select(i: int) -> RouterDecision:
+        return router.select(
             test_items[i], domain_preds[i],
             affective_summary={affective_encoder.labels[j]: float(aff_summary[i][j]) for j in range(len(affective_encoder.labels))},
             retrieved_examples=retrieved[i],
         )
-        for i in range(len(test_items))
-    ]
+
+    proposed_decisions = cached_map(
+        [it.id for it in test_items],
+        _select,
+        lambda d: RouterDecision(**d),
+        cache_path=cache_path_for(cache_dir, "router", "test"),
+        label="router",
+    )
     proposed_outputs = outputs_from_decisions(proposed_decisions, outputs_by_tool)
     proposed_records = [
-        record_from_outputs(test_items[i].id, "proposed", [proposed_outputs[i]], router_llm_calls=proposed_decisions[i].llm_calls)
+        record_from_outputs(test_items[i].id, "proposed", [proposed_outputs[i]], router_llm_calls=proposed_decisions[i].llm_calls, router_latency_s=proposed_decisions[i].latency_s)
         for i in range(len(test_items))
     ]
 

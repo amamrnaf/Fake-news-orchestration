@@ -1,0 +1,58 @@
+[
+  {
+    "configuration": "Complete framework",
+    "macro_f1": 0.9310049486105825,
+    "routing_accuracy": 0.9310344827586207,
+    "ece": 0.04758620689655165,
+    "tools_per_input": 2.0
+  },
+  {
+    "configuration": "Without affective vector",
+    "macro_f1": 0.9310049486105825,
+    "routing_accuracy": 0.9310344827586207,
+    "ece": 0.05068965517241385,
+    "tools_per_input": 2.0
+  },
+  {
+    "configuration": "Without retrieved examples",
+    "macro_f1": 0.9310049486105825,
+    "routing_accuracy": 0.9310344827586207,
+    "ece": 0.01965517241379333,
+    "tools_per_input": 2.0
+  },
+  {
+    "configuration": "Without domain distribution",
+    "macro_f1": 0.9310049486105825,
+    "routing_accuracy": 0.9310344827586207,
+    "ece": 0.0665517241379308,
+    "tools_per_input": 2.0
+  },
+  {
+    "configuration": "Hard domain label only",
+    "macro_f1": 0.9310049486105825,
+    "routing_accuracy": 0.9310344827586207,
+    "ece": 0.0665517241379308,
+    "tools_per_input": 2.0
+  },
+  {
+    "configuration": "No validation catalogue",
+    "macro_f1": 0.840621266427718,
+    "routing_accuracy": 0.8413793103448276,
+    "ece": 0.07000000000000044,
+    "tools_per_input": 2.0
+  },
+  {
+    "configuration": "Gold domain",
+    "macro_f1": 0.9310049486105825,
+    "routing_accuracy": 0.9310344827586207,
+    "ece": 0.0665517241379308,
+    "tools_per_input": 2.0
+  },
+  {
+    "configuration": "All tools for every input",
+    "macro_f1": 0.8344118766653978,
+    "routing_accuracy": null,
+    "ece": 0.025351246053048948,
+    "tools_per_input": 3.0
+  }
+]

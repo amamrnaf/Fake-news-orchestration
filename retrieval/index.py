@@ -16,11 +16,14 @@ alpha=0 -> affective-only retrieval (RQ2 ablation).
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import List, Sequence
+from typing import List, Optional, Sequence
 
 import numpy as np
 
 from utils.types import NewsItem
+
+NEAR_DUPLICATE_THRESHOLD = 0.95
+_NEAR_DUPLICATE_SLACK = 16
 
 
 def _l2_normalise(x: np.ndarray) -> np.ndarray:
@@ -66,6 +69,7 @@ class AffectiveSemanticIndex:
         k: int,
         alpha: float,
         exclude_ids: Sequence[str] = (),
+        near_duplicate_threshold: float = NEAR_DUPLICATE_THRESHOLD,
     ) -> List[RetrievedExample]:
         if self._alpha != alpha:
             self._build(alpha)
@@ -74,7 +78,7 @@ class AffectiveSemanticIndex:
         q_aff = _l2_normalise(np.asarray(query_aff, dtype="float32").reshape(1, -1))
         q = np.concatenate([np.sqrt(alpha) * q_sem, np.sqrt(1.0 - alpha) * q_aff], axis=1).astype("float32")
 
-        fetch_k = min(len(self.items), k + len(exclude_ids))
+        fetch_k = min(len(self.items), k + len(exclude_ids) + _NEAR_DUPLICATE_SLACK)
         scores, idxs = self._faiss_index.search(q, fetch_k)
         scores, idxs = scores[0], idxs[0]
 
@@ -87,6 +91,15 @@ class AffectiveSemanticIndex:
             if item.id in exclude:
                 continue
             sem_score = float(self.sem[idx] @ q_sem[0])
+            # Never return the query itself or a near-duplicate of it: when the
+            # query is in the pool (validation items, which share the pool with
+            # training), it otherwise retrieves itself with its gold label.
+            # Measured: 147/147 validation items did, inflating the
+            # retrieval-augmented detector's validation macro-F1 to 0.939 vs
+            # 0.752 on test. Same threshold and encoder as the split's
+            # near-duplicate grouping, so test queries are unaffected.
+            if sem_score >= near_duplicate_threshold:
+                continue
             aff_score = float(self.aff[idx] @ q_aff[0])
             results.append(RetrievedExample(item=item, score=float(score), sem_score=sem_score, aff_score=aff_score))
             if len(results) >= k:
@@ -99,9 +112,16 @@ class AffectiveSemanticIndex:
         query_aff: np.ndarray,
         k: int,
         alpha: float,
+        exclude_ids_per_query: Optional[Sequence[Sequence[str]]] = None,
     ) -> List[List[RetrievedExample]]:
+        """`exclude_ids_per_query[i]` is passed to `search` as `exclude_ids` for
+        query i. Needed whenever the queries are themselves in the pool (for
+        example routing validation items over a train+validation index)."""
         return [
-            self.search(query_sem[i], query_aff[i], k=k, alpha=alpha)
+            self.search(
+                query_sem[i], query_aff[i], k=k, alpha=alpha,
+                exclude_ids=exclude_ids_per_query[i] if exclude_ids_per_query is not None else (),
+            )
             for i in range(query_sem.shape[0])
         ]
 

@@ -1,0 +1,42 @@
+{
+  "Supervised transformer": {
+    "seconds_per_item": 0.11888350551724546,
+    "generated_tokens": 0.0,
+    "peak_vram_mb": 0.0,
+    "tools_per_input": 1.0,
+    "llm_calls": 0.0,
+    "relative_cost": 0.002230949499731357
+  },
+  "Retrieved-example LLM": {
+    "seconds_per_item": 8.586118678620684,
+    "generated_tokens": 139.10344827586206,
+    "peak_vram_mb": 0.0,
+    "tools_per_input": 1.0,
+    "llm_calls": 1.0,
+    "relative_cost": 0.1611257767623969
+  },
+  "Evidence verifier": {
+    "seconds_per_item": 10.299691342068957,
+    "generated_tokens": 171.82758620689654,
+    "peak_vram_mb": 0.0,
+    "tools_per_input": 1.0,
+    "llm_calls": 1.0,
+    "relative_cost": 0.1932824166565553
+  },
+  "All-tool advisor": {
+    "seconds_per_item": 53.288299682068555,
+    "generated_tokens": 764.3862068965517,
+    "peak_vram_mb": 0.0,
+    "tools_per_input": 4.0,
+    "llm_calls": 2.0,
+    "relative_cost": 1.0
+  },
+  "Proposed router": {
+    "seconds_per_item": 6.369721233792869,
+    "generated_tokens": 1.4068965517241379,
+    "peak_vram_mb": 0.0,
+    "tools_per_input": 1.0,
+    "llm_calls": 1.006896551724138,
+    "relative_cost": 0.11953320469589447
+  }
+}

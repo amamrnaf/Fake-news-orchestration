@@ -8,6 +8,7 @@ from abc import ABC, abstractmethod
 from dataclasses import asdict
 from typing import List, Optional
 
+from utils.cache import load_jsonl_cache, open_jsonl_for_append
 from utils.types import DetectorOutput, NewsItem
 
 
@@ -20,22 +21,14 @@ def predict_batch_with_cache(detector, items: List[NewsItem], cache_path: Option
     through (crash, session teardown, etc.) loses every prediction computed
     so far -- expensive to lose for LLM-backed tools (T2/T3), where each
     prediction can cost several seconds to tens of seconds."""
-    cached: dict = {}
-    if cache_path and os.path.exists(cache_path):
-        with open(cache_path, encoding="utf-8") as f:
-            for line in f:
-                line = line.strip()
-                if line:
-                    row = json.loads(line)
-                    cached[row["item_id"]] = row["output"]
+    cached = load_jsonl_cache(cache_path)
 
     total = len(items)
     start = time.perf_counter()
     outputs = []
     cache_file = None
     if cache_path:
-        os.makedirs(os.path.dirname(cache_path) or ".", exist_ok=True)
-        cache_file = open(cache_path, "a", encoding="utf-8")
+        cache_file = open_jsonl_for_append(cache_path)
     try:
         for i, item in enumerate(items):
             if item.id in cached:

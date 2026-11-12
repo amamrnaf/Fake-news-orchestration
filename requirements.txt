@@ -14,5 +14,7 @@ pyyaml>=6.0
 tqdm>=4.66
 rank-bm25>=0.2.2
 pydantic>=2.6
-openai>=1.30 ; extra == "api"
+openai>=1.30
+sentencepiece>=0.2   # DeBERTa-v3 tokenizer
+protobuf>=4.0        # DeBERTa-v3 tokenizer
 matplotlib>=3.8
