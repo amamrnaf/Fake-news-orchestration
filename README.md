@@ -34,9 +34,11 @@ Holm correction over a comparison family fixed in advance.
   0.898). On held-out celebrity articles the supervised transformer drops to
   0.527 while the retrieval-augmented detector keeps 0.776, yet the router keeps
   the supervised transformer for all 500 articles.
-- Affective example retrieval beats semantic retrieval for the
+- In this split, affective example retrieval beat semantic retrieval for the
   retrieval-augmented detector (+0.111 macro F1, 95% confidence interval
-  [+0.037, +0.186]).
+  [+0.037, +0.186]). AMTCele's fake and legitimate articles come in
+  topically matched pairs, so part of this gap may come from semantic
+  retrieval showing the opposite-label counterpart as an example.
 - Letting validation items retrieve themselves inflated one detector's
   validation score from 0.755 to 0.939 and reversed the routing catalogue. The
   fix and its effect are documented in `PROTOCOL.md`.
